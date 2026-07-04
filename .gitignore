@@ -1,0 +1,17 @@
+node_modules/
+.next/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env*.local
+.env
+data/
+scripts/history.json
+legacy-sheets/
+.DS_Store
+
+# Eski Sheets dokümanları + altyapı notları (public repoda tutulmaz)
+Kod.gs
+CLAUDE.md
+PORT-PLAYBOOK.md

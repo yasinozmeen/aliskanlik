@@ -1,0 +1,46 @@
+name: Deploy to pi
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prune build cache (Pi disk koruması)
+        # Pi diski küçük; build cache birikip diski doldurmasın. Yalnız build
+        # cache silinir — 'system prune -a' diğer app image'larını sileceği için kullanılmaz.
+        run: sudo docker builder prune -f
+
+      - name: Build image
+        run: sudo docker build -t aliskanlik:latest .
+
+      - name: Restart container
+        run: |
+          sudo docker rm -f aliskanlik || true
+          sudo docker run -d --name aliskanlik --restart unless-stopped \
+            -p 127.0.0.1:3005:3000 \
+            -v /home/yasin/aliskanlik-data:/data \
+            -e APP_PASSWORD="${{ secrets.APP_PASSWORD }}" \
+            -e AUTH_SECRET="${{ secrets.AUTH_SECRET }}" \
+            -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+            -e GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            -e GOOGLE_REFRESH_TOKEN="${{ secrets.GOOGLE_REFRESH_TOKEN }}" \
+            aliskanlik:latest
+
+      - name: Health check
+        # Şifre aktifken "/" login'e yönlendirir; /login her zaman 200 döner.
+        run: |
+          for i in $(seq 1 15); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3005/login) && [ "$code" = "200" ] && break
+            sleep 2
+          done
+          echo "HTTP $code"
+          test "$code" = "200"
+
+      - name: Prune dangling images
+        run: sudo docker image prune -f

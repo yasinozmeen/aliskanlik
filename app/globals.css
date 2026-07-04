@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@theme {
+  /* Marka paleti — Sheets brutalist uygulamasından süreklilik */
+  --color-cream: #f4f1e9;
+  --color-cream-2: #ece7d8;
+  --color-ink: #0a0a0a;
+  --color-pop: #ff4a1c;
+  --color-pop-deep: #c1330a;
+  --color-pop-soft: #ff8a66;
+  --color-pop-pale: #fbc9b9;
+  --color-green: #12894e;
+  --color-green-deep: #0c6b3c;
+  --color-blue: #1d4ed8;
+  --color-muted: #6b6b6b;
+  --color-line: #e3dac6;
+
+  --font-display: var(--font-archivo), sans-serif;
+  --font-body: var(--font-hanken), sans-serif;
+  --font-mono: var(--font-space-mono), monospace;
+}
+
+html {
+  color-scheme: light;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-cream);
+  /* İnce doku: brutalist zemine derinlik (düz renk değil) */
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(10, 10, 10, 0.015) 0px,
+      rgba(10, 10, 10, 0.015) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+  min-height: 100dvh;
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Component sınıfları @layer components içinde — Tailwind utility'leri (bg-/text-)
+   sonraki katman olduğu için renk override'ları kazanır (yoksa katmansız kural ezerdi). */
+@layer components {
+  /* Brutalist "sticker" bloğu: sert offset gölge, keskin köşe, kalın çerçeve */
+  .brut {
+    border: 3px solid var(--color-ink);
+    background: var(--color-cream);
+    box-shadow: 5px 5px 0 var(--color-ink);
+  }
+  .brut-sm {
+    border: 2px solid var(--color-ink);
+    box-shadow: 3px 3px 0 var(--color-ink);
+  }
+
+  /* Basınca gölge çöker + hafif kayar — dokunsal his */
+  .press {
+    transition: transform 90ms ease, box-shadow 90ms ease, background-color 120ms ease;
+  }
+  .press:active {
+    transform: translate(3px, 3px);
+    box-shadow: 1px 1px 0 var(--color-ink);
+  }
+
+  /* Siyah bant başlık (Sheets INK bandı karşılığı) */
+  .band {
+    background: var(--color-ink);
+    color: var(--color-cream);
+    font-family: var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .label {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+}
+
+/* Sayfa yükleme: kademeli açılış */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes flood {
+  0% { transform: scale(1); }
+  45% { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+.flood { animation: flood 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise, .flood { animation: none; }
+  .press { transition: none; }
+}
+
+input {
+  font-family: var(--font-body);
+}
