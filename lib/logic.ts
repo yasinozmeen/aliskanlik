@@ -60,6 +60,12 @@ export type AppState = {
   tasks: TasksState;
 };
 
+export type HistoryDay = { date: string; isToday: boolean; marks: Record<number, string | null> };
+export type HistoryState = {
+  habits: { id: number; name: string }[];
+  days: HistoryDay[];
+};
+
 /* ————————————————————————————— Sorgular ————————————————————————————— */
 
 export type Habit = { id: number; name: string; active: number; sort_order: number };
@@ -149,8 +155,9 @@ export function getState(): AppState {
 
   const doneCount = habitStates.filter((h) => h.doneToday).length;
 
-  // Isı haritası: son heatWeeks hafta, gün başına yapılan alışkanlık adedi
-  const heatWeeks = 26;
+  // Isı haritası: son heatWeeks hafta, gün başına yapılan alışkanlık adedi.
+  // Sabit sayı (kaydırmasız mobilde sığar); en yeni gün en solda gösterilir.
+  const heatWeeks = 18;
   const heatStart = addDays(today, -(heatWeeks * 7 - 1));
   const perDay = d
     .prepare(
@@ -206,6 +213,47 @@ export function renameHabit(habitId: number, name: string): void {
 
 export function deleteHabit(habitId: number): void {
   db().prepare("DELETE FROM habits WHERE id = ?").run(habitId);
+}
+
+/** Geçmiş bir günü işaretle/kaldır. Elle eklenen kayda nötr saat (12:00) verilir. */
+export function toggleHabitOnDate(habitId: number, date: string, on: boolean, time = "12:00"): void {
+  const d = db();
+  if (on) {
+    d.prepare(
+      `INSERT INTO logs (habit_id, date, time) VALUES (?, ?, ?)
+       ON CONFLICT(habit_id, date) DO UPDATE SET time = excluded.time`
+    ).run(habitId, date, time);
+  } else {
+    d.prepare("DELETE FROM logs WHERE habit_id = ? AND date = ?").run(habitId, date);
+  }
+}
+
+/** Son `days` günün alışkanlık matrisi (bugünden geriye), düzenleme sayfası için. */
+export function getHistory(days = 90): HistoryState {
+  const d = db();
+  const today = todayISO();
+  const habits = getHabits(true);
+  const start = addDays(today, -(days - 1));
+  const rows = d
+    .prepare("SELECT habit_id, date, time FROM logs WHERE date >= ? AND date <= ?")
+    .all(start, today) as { habit_id: number; date: string; time: string }[];
+
+  const byDate = new Map<string, Record<number, string>>();
+  for (const r of rows) {
+    if (!byDate.has(r.date)) byDate.set(r.date, {});
+    byDate.get(r.date)![r.habit_id] = r.time;
+  }
+
+  const daysArr: HistoryDay[] = [];
+  for (let i = 0; i < days; i++) {
+    const dt = addDays(today, -i); // en yeni önce
+    const dayMarks = byDate.get(dt) || {};
+    const marks: Record<number, string | null> = {};
+    for (const h of habits) marks[h.id] = dayMarks[h.id] ?? null;
+    daysArr.push({ date: dt, isToday: dt === today, marks });
+  }
+
+  return { habits: habits.map((h) => ({ id: h.id, name: h.name })), days: daysArr };
 }
 
 /* ————————————————————————————— Görev sayacı ————————————————————————————— */

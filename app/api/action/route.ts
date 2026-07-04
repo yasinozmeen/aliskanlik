@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthed } from "@/lib/require-auth";
 import {
   toggleHabit,
+  toggleHabitOnDate,
   addHabit,
   setHabitActive,
   renameHabit,
@@ -19,6 +20,9 @@ export async function POST(req: NextRequest) {
     switch (type) {
       case "toggle":
         toggleHabit(Number(payload.habitId), !!payload.on);
+        break;
+      case "toggleDate":
+        toggleHabitOnDate(Number(payload.habitId), String(payload.date), !!payload.on);
         break;
       case "addHabit":
         if (payload.name?.trim()) addHabit(payload.name);

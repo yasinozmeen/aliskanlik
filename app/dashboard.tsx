@@ -190,6 +190,8 @@ function HeatMap({ cells, total }: { cells: HeatCell[]; total: number }) {
     col[wd] = c;
   }
   if (col.some((x) => x !== null)) weeks.push(col);
+  // En yeni hafta EN SOLDA olsun (kullanıcı isteği): kronolojiyi ters çevir
+  const weeksRev = [...weeks].reverse();
 
   function color(count: number) {
     if (count <= 0) return "var(--color-line)";
@@ -200,74 +202,79 @@ function HeatMap({ cells, total }: { cells: HeatCell[]; total: number }) {
     return "var(--color-pop-pale)";
   }
 
-  // Ay etiketleri: her sütunun ilk dolu gününün ayı öncekinden farklıysa
-  const monthLabels = weeks.map((w) => {
+  // Ay etiketleri: bir sütunun ayı solundakinden (daha yeni) farklıysa yaz
+  const monthLabels = weeksRev.map((w) => {
     const first = w.find((x) => x !== null);
     return first ? monthOf(first.date) : -1;
   });
 
-  const CELL = 14;
-  const GAP = 3;
+  const GAP = 2;
+  const LABW = 22;
+  const days = ["Pzt", "", "Çar", "", "Cum", "", ""];
 
+  // Sabit genişlik, kaydırma yok: sütunlar flex-1 ile alanı doldurur, kareler aspect-square
   return (
-    <div className="overflow-x-auto pb-1 -mx-1 px-1">
-      <div className="inline-flex flex-col gap-1 min-w-max">
-        {/* Ay etiketleri */}
-        <div className="flex" style={{ gap: GAP, marginLeft: 22 }}>
-          {weeks.map((_, i) => {
-            const m = monthLabels[i];
-            const show = m >= 0 && m !== monthLabels[i - 1];
-            return (
-              <div key={i} style={{ width: CELL }} className="label text-[0.5rem] text-[var(--color-muted)]">
-                {show ? AYK[m] : ""}
-              </div>
-            );
-          })}
-        </div>
+    <div>
+      {/* Ay etiketleri */}
+      <div className="flex mb-1" style={{ gap: GAP }}>
+        <div style={{ width: LABW }} className="shrink-0" />
+        {weeksRev.map((_, i) => {
+          const m = monthLabels[i];
+          const show = m >= 0 && m !== monthLabels[i - 1];
+          return (
+            <div
+              key={i}
+              className="flex-1 label text-[0.5rem] text-[var(--color-muted)] whitespace-nowrap"
+            >
+              {show ? AYK[m] : ""}
+            </div>
+          );
+        })}
+      </div>
 
-        <div className="flex" style={{ gap: GAP }}>
-          {/* Gün etiketleri */}
-          <div className="flex flex-col justify-between mr-1" style={{ width: 18, gap: GAP }}>
-            {["Pzt", "", "Çar", "", "Cum", "", ""].map((g, i) => (
-              <div
-                key={i}
-                style={{ height: CELL }}
-                className="label text-[0.5rem] text-[var(--color-muted)] flex items-center justify-end"
-              >
-                {g}
-              </div>
-            ))}
-          </div>
-
-          {/* Sütunlar */}
-          {weeks.map((w, i) => (
-            <div key={i} className="flex flex-col" style={{ gap: GAP }}>
-              {w.map((cell, j) => (
-                <div
-                  key={j}
-                  title={cell ? `${cell.date}: ${cell.count}` : ""}
-                  style={{
-                    width: CELL,
-                    height: CELL,
-                    background: cell ? color(cell.count) : "transparent",
-                    border: cell ? "1px solid rgba(10,10,10,0.12)" : "none",
-                  }}
-                />
-              ))}
+      <div className="flex items-stretch" style={{ gap: GAP }}>
+        {/* Gün etiketleri */}
+        <div className="flex flex-col shrink-0" style={{ width: LABW, gap: GAP }}>
+          {days.map((g, i) => (
+            <div
+              key={i}
+              className="flex-1 label text-[0.5rem] text-[var(--color-muted)] flex items-center justify-end"
+            >
+              {g}
             </div>
           ))}
         </div>
 
-        {/* Legend */}
-        <div className="label text-[0.55rem] text-[var(--color-muted)] flex items-center gap-1.5 mt-1" style={{ marginLeft: 22 }}>
-          az
-          {["var(--color-pop-pale)", "var(--color-pop-soft)", "var(--color-pop)", "var(--color-pop-deep)"].map(
-            (c, i) => (
-              <span key={i} style={{ width: 11, height: 11, background: c, display: "inline-block" }} />
-            )
-          )}
-          çok
-        </div>
+        {/* Sütunlar (en yeni solda) */}
+        {weeksRev.map((w, i) => (
+          <div key={i} className="flex-1 flex flex-col" style={{ gap: GAP }}>
+            {w.map((cell, j) => (
+              <div
+                key={j}
+                className="aspect-square"
+                title={cell ? `${cell.date}: ${cell.count}` : ""}
+                style={{
+                  background: cell ? color(cell.count) : "transparent",
+                  border: cell ? "1px solid rgba(10,10,10,0.12)" : "none",
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div
+        className="label text-[0.55rem] text-[var(--color-muted)] flex items-center gap-1.5 mt-2"
+        style={{ marginLeft: LABW }}
+      >
+        az
+        {["var(--color-pop-pale)", "var(--color-pop-soft)", "var(--color-pop)", "var(--color-pop-deep)"].map(
+          (c, i) => (
+            <span key={i} style={{ width: 11, height: 11, background: c, display: "inline-block" }} />
+          )
+        )}
+        çok
       </div>
     </div>
   );
@@ -441,7 +448,14 @@ export default function Dashboard({ initial }: { initial: AppState }) {
         </div>
       </section>
 
-      {/* ————— AYARLAR ————— */}
+      {/* ————— GEÇMİŞ + AYARLAR ————— */}
+      <Link
+        href="/gecmis"
+        className="press brut-sm bg-[var(--color-ink)] text-[var(--color-cream)] flex items-center justify-between px-4 py-3 mb-3"
+      >
+        <span className="font-display font-extrabold uppercase text-sm">Geçmiş // gör & düzenle</span>
+        <span className="font-mono text-[var(--color-pop)]">→</span>
+      </Link>
       <Link
         href="/ayarlar"
         className="press brut-sm bg-[var(--color-cream)] flex items-center justify-between px-4 py-3 mb-6"
