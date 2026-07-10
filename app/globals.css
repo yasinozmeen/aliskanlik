@@ -96,8 +96,15 @@ body {
 }
 .flood { animation: flood 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
 
+/* barın altından aşağı doğru açılan panel (yeni görev girişi) */
+@keyframes drop {
+  from { opacity: 0; transform: translateY(-10px) scaleY(0.94); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+.drop { animation: drop 0.24s cubic-bezier(0.16, 1, 0.3, 1) both; transform-origin: top; }
+
 @media (prefers-reduced-motion: reduce) {
-  .rise, .flood { animation: none; }
+  .rise, .flood, .drop { animation: none; }
   .press { transition: none; }
 }
 

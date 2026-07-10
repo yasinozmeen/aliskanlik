@@ -282,9 +282,12 @@ function HeatMap({ cells, total }: { cells: HeatCell[]; total: number }) {
 
 /* ————————————————————————— Bölüm başlığı ————————————————————————— */
 
-function Band({ children }: { children: React.ReactNode }) {
+function Band({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="band text-[0.72rem] font-bold px-3 py-2 mb-3 flex items-center">{children}</div>
+    <div className="band text-[0.72rem] font-bold px-3 py-2 mb-3 flex items-center">
+      <span className="flex-1">{children}</span>
+      {action}
+    </div>
   );
 }
 
@@ -297,6 +300,9 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [habitBusy, setHabitBusy] = useState<number | null>(null);
   const [taskBusy, setTaskBusy] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
 
   const loadTasks = useCallback(async () => {
     try {
@@ -348,8 +354,28 @@ export default function Dashboard({ initial }: { initial: AppState }) {
     }
   }
 
+  async function addTask() {
+    const title = newTitle.trim();
+    if (!title || addBusy) return;
+    setAddBusy(true);
+    try {
+      const r = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const j = await r.json();
+      if (j.ok) {
+        setTasks(j.tasks || []);
+        setNewTitle("");
+        setAdding(false);
+      }
+    } finally {
+      setAddBusy(false);
+    }
+  }
+
   const { gun, tarih } = fmtDate(state.today);
-  const t = state.tasks;
 
   return (
     <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto pb-16">
@@ -394,12 +420,57 @@ export default function Dashboard({ initial }: { initial: AppState }) {
 
       {/* ————— GENEL GÖREVLER ————— */}
       <section className="rise mb-8" style={{ animationDelay: "120ms" }}>
-        <Band>genel görevler // google tasks</Band>
-        <div className="brut-sm bg-[var(--color-ink)] px-3 py-2 mb-3">
-          <span className="font-mono font-bold text-[0.78rem] text-[var(--color-pop)]">
-            BUGÜN {t.today} · BU AY {t.month} · SERİ {t.streak} gün
-          </span>
-        </div>
+        <Band
+          action={
+            tasksConfigured ? (
+              <button
+                type="button"
+                aria-label={adding ? "Görev eklemeyi kapat" : "Yeni görev ekle"}
+                aria-expanded={adding}
+                onClick={() => setAdding((v) => !v)}
+                className="press -my-1.5 -mr-1.5 w-8 h-8 grid place-items-center text-[var(--color-pop)] font-display font-black text-2xl leading-none"
+              >
+                <span className={`transition-transform duration-200 ${adding ? "rotate-45" : ""}`}>
+                  +
+                </span>
+              </button>
+            ) : null
+          }
+        >
+          genel görevler // google tasks
+        </Band>
+
+        {adding && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              addTask();
+            }}
+            className="drop brut-sm bg-[var(--color-cream)] px-3 py-2.5 mb-3 flex items-center gap-2"
+          >
+            <input
+              autoFocus
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setNewTitle("");
+                  setAdding(false);
+                }
+              }}
+              disabled={addBusy}
+              placeholder="görev yaz, enter'a bas…"
+              className="flex-1 min-w-0 bg-transparent outline-none font-body text-[0.9rem] placeholder:text-[var(--color-muted)]"
+            />
+            <button
+              type="submit"
+              disabled={!newTitle.trim() || addBusy}
+              className="press label text-[0.6rem] bg-[var(--color-ink)] text-[var(--color-cream)] px-2.5 py-1.5 shrink-0 disabled:opacity-40"
+            >
+              {addBusy ? "…" : "ekle"}
+            </button>
+          </form>
+        )}
 
         {tasksLoading ? (
           <p className="label text-[0.65rem] text-[var(--color-muted)] px-1">yükleniyor…</p>
