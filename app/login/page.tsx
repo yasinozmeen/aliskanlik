@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -8,6 +8,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [skipLogin, setSkipLogin] = useState(false);
+
+  useEffect(() => {
+    const localHost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+    if (process.env.NODE_ENV === "development" || localHost) {
+      setSkipLogin(true);
+      router.replace("/");
+    }
+  }, [router]);
+
+  if (skipLogin) return null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

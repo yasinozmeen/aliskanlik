@@ -5,6 +5,15 @@ import Link from "next/link";
 import type { AppState, HabitState, HeatCell } from "@/lib/logic";
 
 type GTask = { id: string; title: string };
+const DUA_TEXT =
+  "Allahım Bize hem bu dünyada hem öbür dünyada iyilik ver bizi kötülükten koru, Göğsümüzü genişlet, kalbimize ferahlık ver. İşimizi bize kolaylaştır. Amin";
+
+function isTelkinDua(name: string) {
+  return name
+    .toLocaleLowerCase("tr-TR")
+    .replace(/[^a-zçğıöşü]/g, "")
+    .replace(/^tellkin/, "telkin") === "telkindua";
+}
 
 /* ————————————————————————— Yardımcılar ————————————————————————— */
 
@@ -303,6 +312,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [addBusy, setAddBusy] = useState(false);
+  const [duaOpen, setDuaOpen] = useState(false);
 
   const loadTasks = useCallback(async () => {
     try {
@@ -330,7 +340,11 @@ export default function Dashboard({ initial }: { initial: AppState }) {
         body: JSON.stringify({ type: "toggle", payload: { habitId, on } }),
       });
       const j = await r.json();
-      if (j.ok) setState(j.state);
+      if (j.ok) {
+        setState(j.state);
+        const habit = state.habits.find((h) => h.id === habitId);
+        if (on && habit && isTelkinDua(habit.name)) setDuaOpen(true);
+      }
     } finally {
       setHabitBusy(null);
     }
@@ -379,6 +393,34 @@ export default function Dashboard({ initial }: { initial: AppState }) {
 
   return (
     <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto pb-16">
+      {duaOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-ink)]/55 px-5"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dua-baslik"
+          aria-describedby="dua-metin"
+        >
+          <div className="brut drop w-full max-w-sm bg-[var(--color-cream)] p-4">
+            <p className="label text-[0.62rem] text-[var(--color-pop-deep)]">telkin-dua tamam</p>
+            <h2 id="dua-baslik" className="font-display font-black uppercase text-[1.65rem] leading-none mt-1">
+              Bir dua daha
+            </h2>
+            <p id="dua-metin" className="font-body font-medium text-[1.02rem] leading-relaxed mt-4">
+              {DUA_TEXT}
+            </p>
+            <button
+              type="button"
+              autoFocus
+              onClick={() => setDuaOpen(false)}
+              className="press brut-sm mt-5 w-full bg-[var(--color-pop)] px-4 py-3 font-display font-black uppercase text-sm"
+            >
+              Amin
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ————— MASTHEAD ————— */}
       <header className="rise flex items-start justify-between mb-6">
         <div>
