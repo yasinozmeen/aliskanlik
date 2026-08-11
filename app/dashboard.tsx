@@ -25,6 +25,74 @@ function fmtDate(iso: string) {
   };
 }
 
+type TaskTitlePart =
+  | { type: "text"; value: string }
+  | { type: "link"; url: string; number: number };
+
+function splitTaskTitle(title: string): TaskTitlePart[] {
+  const parts: TaskTitlePart[] = [];
+  let cursor = 0;
+  let linkNumber = 0;
+
+  for (const match of title.matchAll(/https?:\/\/[^\s]+/gi)) {
+    const start = match.index ?? 0;
+    const rawUrl = match[0];
+    const url = rawUrl.replace(/[)\]},.;!]+$/g, "");
+    const trailing = rawUrl.slice(url.length);
+
+    if (start > cursor) parts.push({ type: "text", value: title.slice(cursor, start) });
+    if (url) {
+      linkNumber += 1;
+      parts.push({ type: "link", url, number: linkNumber });
+    }
+    if (trailing) parts.push({ type: "text", value: trailing });
+    cursor = start + rawUrl.length;
+  }
+
+  if (cursor < title.length) parts.push({ type: "text", value: title.slice(cursor) });
+  return parts.length ? parts : [{ type: "text", value: title }];
+}
+
+function TaskTitle({ title }: { title: string }) {
+  return (
+    <span className="font-body text-[0.9rem] leading-snug break-words">
+      {splitTaskTitle(title).map((part, index) =>
+        part.type === "link" ? (
+          <a
+            key={`link-${index}`}
+            href={part.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={part.url}
+            aria-label={`Bağlantı ${part.number}: ${part.url}`}
+            className="relative mx-0.5 inline-flex items-center gap-1 px-1 align-baseline font-mono text-[0.68rem] font-bold uppercase text-[var(--color-ink)] underline decoration-[3px] decoration-[var(--color-pop)] underline-offset-[3px] after:absolute after:-inset-x-1 after:-inset-y-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-pop-deep)]"
+          >
+            link {part.number}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.25"
+              strokeLinecap="square"
+              strokeLinejoin="miter"
+              className="h-3.5 w-3.5"
+            >
+              <path d="M14 5h5v5" />
+              <path d="m10 14 9-9" />
+              <path d="M19 14v5H5V5h5" />
+            </svg>
+          </a>
+        ) : (
+          <span key={`text-${index}`} className="whitespace-pre-wrap">
+            {part.value}
+          </span>
+        )
+      )}
+    </span>
+  );
+}
+
 /* ————————————————————————— Alışkanlık kartı ————————————————————————— */
 
 function HabitCard({
@@ -835,11 +903,13 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                     onClick={() => completeTask(task.id)}
                     disabled={taskBusy !== null || editBusy}
                     aria-label={`${task.title} görevini tamamla`}
-                    className="min-h-12 flex flex-1 items-center gap-3 px-3 py-2.5 text-left transition-colors active:bg-[var(--color-cream-2)] disabled:cursor-wait focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop)]"
+                    className="w-12 min-h-12 shrink-0 grid place-items-center transition-colors active:bg-[var(--color-cream-2)] disabled:cursor-wait focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop)]"
                   >
                     <span aria-hidden="true" className="w-5 h-5 border-2 border-[var(--color-ink)] shrink-0" />
-                    <span className="font-body text-[0.9rem] leading-snug break-words">{task.title}</span>
                   </button>
+                  <div className="flex min-w-0 flex-1 items-center py-1.5 pr-2.5">
+                    <TaskTitle title={task.title} />
+                  </div>
                   <button
                     type="button"
                     onClick={() => startEditingTask(task)}
