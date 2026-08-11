@@ -442,6 +442,10 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [addBusy, setAddBusy] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState("");
   const [duaOpen, setDuaOpen] = useState(false);
   const [measurementHabit, setMeasurementHabit] = useState<HabitState | null>(null);
   const [measurementValues, setMeasurementValues] = useState<Record<number, string>>({});
@@ -569,6 +573,46 @@ export default function Dashboard({ initial }: { initial: AppState }) {
     }
   }
 
+  function startEditingTask(task: GTask) {
+    setAdding(false);
+    setNewTitle("");
+    setEditingTaskId(task.id);
+    setEditTitle(task.title);
+    setEditError("");
+  }
+
+  function cancelEditingTask() {
+    setEditingTaskId(null);
+    setEditTitle("");
+    setEditError("");
+  }
+
+  async function saveTaskTitle(taskId: string) {
+    const title = editTitle.trim();
+    if (!title || editBusy) return;
+    setEditBusy(true);
+    setEditError("");
+    try {
+      const r = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId, title }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) {
+        setEditError("Görev güncellenemedi. Tekrar dene.");
+        return;
+      }
+      setTasks(j.tasks || []);
+      setEditingTaskId(null);
+      setEditTitle("");
+    } catch {
+      setEditError("Bağlantı kurulamadı. Değişiklik kaydedilmedi.");
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   const { gun, tarih } = fmtDate(state.today);
 
   return (
@@ -668,8 +712,11 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                 type="button"
                 aria-label={adding ? "Görev eklemeyi kapat" : "Yeni görev ekle"}
                 aria-expanded={adding}
-                onClick={() => setAdding((v) => !v)}
-                className="press -my-1.5 -mr-1.5 w-8 h-8 grid place-items-center text-[var(--color-pop)] font-display font-black text-2xl leading-none"
+                onClick={() => {
+                  cancelEditingTask();
+                  setAdding((v) => !v);
+                }}
+                className="press -my-2 -mr-3 w-11 h-11 grid place-items-center border-l-2 border-[var(--color-cream)]/30 text-[var(--color-pop)] font-display font-black text-2xl leading-none focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop)]"
               >
                 <span className={`transition-transform duration-200 ${adding ? "rotate-45" : ""}`}>
                   +
@@ -678,7 +725,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
             ) : null
           }
         >
-          genel görevler // google tasks
+          google tasks
         </Band>
 
         {adding && (
@@ -725,18 +772,98 @@ export default function Dashboard({ initial }: { initial: AppState }) {
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {tasks.map((task) => (
-              <button
-                key={task.id}
-                onClick={() => !taskBusy && completeTask(task.id)}
-                className={`press brut-sm bg-[var(--color-cream)] px-3 py-2.5 flex items-center gap-3 text-left ${
-                  taskBusy === task.id ? "opacity-50" : ""
-                }`}
-              >
-                <span className="w-5 h-5 border-2 border-[var(--color-ink)] shrink-0" />
-                <span className="font-body text-[0.9rem] leading-snug">{task.title}</span>
-              </button>
-            ))}
+            {tasks.map((task) =>
+              editingTaskId === task.id ? (
+                <form
+                  key={task.id}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    saveTaskTitle(task.id);
+                  }}
+                  className="drop brut-sm bg-[var(--color-cream)] p-2.5"
+                >
+                  <label
+                    htmlFor={`task-title-${task.id}`}
+                    className="label block text-[0.58rem] font-bold text-[var(--color-pop-deep)]"
+                  >
+                    görevi düzenle
+                  </label>
+                  <input
+                    id={`task-title-${task.id}`}
+                    autoFocus
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") cancelEditingTask();
+                    }}
+                    disabled={editBusy}
+                    maxLength={500}
+                    className="mt-1.5 min-h-11 w-full border-2 border-[var(--color-ink)] bg-[var(--color-cream-2)] px-2.5 font-body text-base outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-pop)] focus-visible:ring-offset-2"
+                  />
+                  {editError && (
+                    <p role="alert" className="mt-2 text-sm font-semibold text-[var(--color-pop-deep)]">
+                      {editError}
+                    </p>
+                  )}
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelEditingTask}
+                      disabled={editBusy}
+                      className="press min-h-11 border-2 border-[var(--color-ink)] bg-[var(--color-cream)] px-3 label text-[0.62rem] font-bold disabled:opacity-40"
+                    >
+                      vazgeç
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!editTitle.trim() || editBusy}
+                      className="press min-h-11 border-2 border-[var(--color-ink)] bg-[var(--color-pop)] px-3 label text-[0.62rem] font-bold disabled:opacity-40"
+                    >
+                      {editBusy ? "kaydediliyor…" : "kaydet"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div
+                  key={task.id}
+                  className={`brut-sm bg-[var(--color-cream)] flex items-stretch overflow-hidden ${
+                    taskBusy === task.id ? "opacity-50" : ""
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => completeTask(task.id)}
+                    disabled={taskBusy !== null || editBusy}
+                    aria-label={`${task.title} görevini tamamla`}
+                    className="min-h-12 flex flex-1 items-center gap-3 px-3 py-2.5 text-left transition-colors active:bg-[var(--color-cream-2)] disabled:cursor-wait focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop)]"
+                  >
+                    <span aria-hidden="true" className="w-5 h-5 border-2 border-[var(--color-ink)] shrink-0" />
+                    <span className="font-body text-[0.9rem] leading-snug break-words">{task.title}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startEditingTask(task)}
+                    disabled={taskBusy !== null || editBusy}
+                    aria-label={`${task.title} görevini düzenle`}
+                    className="press w-12 min-h-12 shrink-0 grid place-items-center border-l-2 border-[var(--color-ink)] bg-[var(--color-cream-2)] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop)]"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.25"
+                      strokeLinecap="square"
+                      strokeLinejoin="miter"
+                      className="h-5 w-5"
+                    >
+                      <path d="M4 20h4L19 9l-4-4L4 16v4Z" />
+                      <path d="m13.5 6.5 4 4" />
+                    </svg>
+                  </button>
+                </div>
+              )
+            )}
           </div>
         )}
       </section>

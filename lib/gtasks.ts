@@ -61,6 +61,17 @@ export async function createTask(title: string): Promise<void> {
   if (!res.ok) throw new Error("task insert failed: " + res.status);
 }
 
+export async function updateTaskTitle(taskId: string, title: string): Promise<void> {
+  const at = await accessToken();
+  const url = `https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(TASKLIST)}/tasks/${encodeURIComponent(taskId)}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { Authorization: "Bearer " + at, "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error("task title patch failed: " + res.status);
+}
+
 export async function completeTask(taskId: string): Promise<void> {
   const at = await accessToken();
   const url = `https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(TASKLIST)}/tasks/${encodeURIComponent(taskId)}`;

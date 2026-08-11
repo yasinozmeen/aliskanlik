@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthed } from "@/lib/require-auth";
-import { gtasksConfigured, listOpenTasks, completeTask, createTask } from "@/lib/gtasks";
+import {
+  gtasksConfigured,
+  listOpenTasks,
+  completeTask,
+  createTask,
+  updateTaskTitle,
+} from "@/lib/gtasks";
 import { bumpTaskCount, getTaskStats } from "@/lib/logic";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +47,30 @@ export async function POST(req: NextRequest) {
     } else {
       return NextResponse.json({ ok: false, error: "taskId veya title gerekli" }, { status: 400 });
     }
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
+  }
+
+  const tasks = await listOpenTasks().catch(() => []);
+  return NextResponse.json({ ok: true, tasks, stats: getTaskStats() });
+}
+
+// Mevcut bir Google Tasks görevinin yalnızca başlığını değiştirir.
+export async function PATCH(req: NextRequest) {
+  if (!(await isAuthed())) return NextResponse.json({ ok: false }, { status: 401 });
+  if (!gtasksConfigured()) {
+    return NextResponse.json({ ok: false, error: "gtasks not configured" }, { status: 400 });
+  }
+
+  const body = await req.json();
+  const taskId = typeof body.taskId === "string" ? body.taskId.trim() : "";
+  const title = typeof body.title === "string" ? body.title.trim().slice(0, 500) : "";
+  if (!taskId || !title) {
+    return NextResponse.json({ ok: false, error: "taskId ve title gerekli" }, { status: 400 });
+  }
+
+  try {
+    await updateTaskTitle(taskId, title);
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }
