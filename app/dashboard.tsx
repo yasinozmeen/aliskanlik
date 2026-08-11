@@ -34,7 +34,7 @@ function splitTaskTitle(title: string): TaskTitlePart[] {
   let cursor = 0;
   let linkNumber = 0;
 
-  for (const match of title.matchAll(/https?:\/\/[^\s]+/gi)) {
+  for (const match of title.matchAll(/(?:https?|codex):\/\/[^\s]+/gi)) {
     const start = match.index ?? 0;
     const rawUrl = match[0];
     const url = rawUrl.replace(/[)\]},.;!]+$/g, "");
