@@ -1,13 +1,28 @@
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
-const SECRET = process.env.AUTH_SECRET || "dev-secret";
 export const COOKIE_NAME = "aliskanlik_auth";
 
-export function authToken(): string {
-  return createHmac("sha256", SECRET).update("aliskanlik-auth-v1").digest("hex");
+function authSecret(): string {
+  const secret = process.env.AUTH_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("AUTH_SECRET üretim ortamında zorunludur.");
+  }
+  return "dev-secret";
 }
 
-export function checkPassword(password: string): boolean {
+export function authToken(): string {
+  return createHmac("sha256", authSecret()).update("aliskanlik-auth-v1").digest("hex");
+}
+
+export function checkPassword(password: unknown): boolean {
   const expected = process.env.APP_PASSWORD || "";
-  return expected.length > 0 && password === expected;
+  if (!expected || typeof password !== "string") return false;
+
+  const actualBuffer = Buffer.from(password);
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    actualBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(actualBuffer, expectedBuffer)
+  );
 }

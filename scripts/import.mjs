@@ -3,7 +3,7 @@
  * Kaynak: data/history.json  { habits:[...], logs:[{date,habit,frac}], taskCounts:[{date,count}] }
  *   - frac (0-1 gün kesri, Sheets formatı) → "HH:MM"
  *   - Kayıt zaten varsa ATLAR (tekrar çalıştırmak güvenli).
- * Çalıştırma: DATA_DIR=/home/yasin/aliskanlik-data npm run db:import
+ * Çalıştırma: DATA_DIR=/srv/aliskanlik/data npm run db:import
  */
 import Database from "better-sqlite3";
 import fs from "fs";
