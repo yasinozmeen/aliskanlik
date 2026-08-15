@@ -1,4 +1,29 @@
 import { db } from "./db";
+import {
+  SCAN_DAYS,
+  addDays,
+  countCycles,
+  daysBetween,
+  dueDatesInRange,
+  gapStreaks,
+  isCalendarSchedule,
+  isDueOn,
+  isValidISODate,
+  maxDate,
+  minDate,
+  nextDueDate,
+  occurrenceStreaks,
+  parseSchedule,
+  scheduleLabel,
+} from "./schedule";
+import type {
+  AnchorMode,
+  Schedule,
+  ScheduleKind,
+  ScheduleRow,
+} from "./schedule";
+
+export * from "./schedule";
 
 /* ————————————————— Tarih yardımcıları (Europe/Istanbul sabit) —————————————————
    Container UTC olabilir; "bugün" ve "şu anki saat" her zaman İstanbul'a göre. */
@@ -23,23 +48,18 @@ export function nowHM(): string {
   }).format(new Date());
 }
 
-function addDays(iso: string, n: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + n);
-  return dt.toISOString().slice(0, 10);
-}
-
-function dayOfMonth(iso: string): number {
-  return Number(iso.split("-")[2]);
-}
-
 /* ————————————————————————————— Tipler ————————————————————————————— */
 
 export type HabitState = {
   id: number;
   name: string;
   measurementRequired: boolean;
+  schedule: Schedule;
+  scheduleLabel: string;
+  /** Bugün sırası geldi mi (erken işaretlenmişse de true kabul edilir). */
+  dueToday: boolean;
+  /** Sırası gelmediyse bir sonraki planlı gün. */
+  nextDue: string | null;
   doneToday: boolean;
   doneTime: string | null;
   streak: number;
@@ -59,12 +79,20 @@ export type AppState = {
   score: { done: number; total: number };
   heatmap: HeatCell[];
   heatWeeks: number;
+  /** Isı haritası renk skalasının üst ucu (penceredeki en yoğun gün). */
+  heatMax: number;
   tasks: TasksState;
 };
 
-export type HistoryDay = { date: string; isToday: boolean; marks: Record<number, string | null> };
+export type HistoryDay = {
+  date: string;
+  isToday: boolean;
+  marks: Record<number, string | null>;
+  /** O gün alışkanlığın sırası gelmiş miydi (plan dışı günler soluk gösterilir). */
+  planned: Record<number, boolean>;
+};
 export type HistoryState = {
-  habits: { id: number; name: string }[];
+  habits: { id: number; name: string; scheduleLabel: string }[];
   days: HistoryDay[];
 };
 
@@ -76,6 +104,23 @@ export type Habit = {
   active: number;
   sort_order: number;
   measurement_required: number;
+  created_at: string;
+  schedule: Schedule;
+  scheduleLabel: string;
+};
+
+/**
+ * Kullanıcı girdisi hatası — API bunu 400 ile ve mesajıyla döner.
+ * Beklenmedik iç hatalar 500 döner ve mesajı dışarı sızmaz.
+ */
+export class InputError extends Error {}
+
+export type ScheduleInput = {
+  kind: string;
+  intervalDays?: number;
+  anchorMode?: string;
+  anchorDate?: string | null;
+  weekdays?: number[];
 };
 
 export type MeasurementType = {
@@ -108,14 +153,31 @@ export type MeasurementSettings = {
   types: MeasurementType[];
 };
 
+const HABIT_COLUMNS = `id, name, active, sort_order, measurement_required, created_at,
+                       schedule_kind, interval_days, anchor_mode, anchor_date, weekdays`;
+
+type HabitRow = Omit<Habit, "schedule" | "scheduleLabel"> & ScheduleRow;
+
+function toHabit(row: HabitRow): Habit {
+  const schedule = parseSchedule(row);
+  return {
+    id: row.id,
+    name: row.name,
+    active: row.active,
+    sort_order: row.sort_order,
+    measurement_required: row.measurement_required,
+    created_at: row.created_at,
+    schedule,
+    scheduleLabel: scheduleLabel(schedule),
+  };
+}
+
 export function getHabits(activeOnly = true): Habit[] {
   const d = db();
   const sql = activeOnly
-    ? `SELECT id, name, active, sort_order, measurement_required
-       FROM habits WHERE active = 1 ORDER BY sort_order, id`
-    : `SELECT id, name, active, sort_order, measurement_required
-       FROM habits ORDER BY sort_order, id`;
-  return d.prepare(sql).all() as Habit[];
+    ? `SELECT ${HABIT_COLUMNS} FROM habits WHERE active = 1 ORDER BY sort_order, id`
+    : `SELECT ${HABIT_COLUMNS} FROM habits ORDER BY sort_order, id`;
+  return (d.prepare(sql).all() as HabitRow[]).map(toHabit);
 }
 
 export function getMeasurementTypes(activeOnly = true): MeasurementType[] {
@@ -168,6 +230,23 @@ function computeStreaks(dates: Set<string>, today: string): { streak: number; re
   return { streak, record };
 }
 
+/**
+ * `habits.created_at` SQLite `datetime('now')` ile UTC yazılır; uygulamanın
+ * "bugün"ü ise İstanbul'a göredir. Ham metni kesmek gece yarısı ile 03:00
+ * arasında oluşturulan alışkanlığı bir gün geriye atar ve sabit takvimi kaydırır.
+ */
+function habitCreatedDate(createdAt: string | null, fallback: string): string {
+  if (!createdAt) return fallback;
+  const utc = new Date(createdAt.replace(" ", "T") + "Z");
+  if (Number.isNaN(utc.getTime())) return createdAt.slice(0, 10) || fallback;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(utc);
+}
+
 function segment(hm: string): "gece" | "sabah" | "ogle" | "aksam" {
   const h = Number(hm.split(":")[0]);
   if (h < 6) return "gece";
@@ -183,31 +262,84 @@ export function getState(): AppState {
   const habits = getHabits(true);
 
   const monthStart = today.slice(0, 8) + "01";
-  const elapsed = dayOfMonth(today); // ay başından bugüne geçen gün sayısı
 
   const habitStates: HabitState[] = habits.map((h) => {
     const rows = d
       .prepare("SELECT date, time FROM logs WHERE habit_id = ? ORDER BY date")
       .all(h.id) as { date: string; time: string }[];
 
-    const dates = new Set(rows.map((r) => r.date));
-    const { streak, record } = computeStreaks(dates, today);
+    const sortedDates = rows.map((r) => r.date);
+    const dates = new Set(sortedDates);
+    const schedule = h.schedule;
+    const createdAnchor = habitCreatedDate(h.created_at, today);
+    // Alışkanlığın başlangıcı: oluşturulma günü ya da (Sheets'ten aktarılan
+    // kayıtlar için) ilk kayıt — hangisi daha eskiyse. Bundan önceki günler
+    // hiçbir hesaba katılmaz; yoksa yeni alışkanlık var olmadığı günlerden
+    // ceza yer ve aylık yüzdesi yanlış çıkar.
+    const habitStart = sortedDates.length
+      ? minDate(sortedDates[0], createdAnchor)
+      : createdAnchor;
+
+    // "Son yapılıştan say" modunda bugünün durumu, bugünden ÖNCEKİ son kayda bakar.
+    let lastDoneBeforeToday: string | null = null;
+    for (const date of sortedDates) {
+      if (date < today) lastDoneBeforeToday = date;
+    }
+    const lastDone = sortedDates.length ? sortedDates[sortedDates.length - 1] : null;
 
     const todayRow = rows.find((r) => r.date === today);
+    const doneToday = !!todayRow;
+    const dueToday =
+      doneToday || isDueOn(schedule, today, lastDoneBeforeToday, createdAnchor);
 
-    let monthDone = 0;
     const timeDist = { gece: 0, sabah: 0, ogle: 0, aksam: 0 };
-    for (const r of rows) {
-      if (r.date >= monthStart && r.date <= today) monthDone++;
-      timeDist[segment(r.time)]++;
+    for (const r of rows) timeDist[segment(r.time)]++;
+
+    // Aylık yüzde penceresi: ay başı, ama alışkanlık ay içinde başladıysa o gün.
+    const pctStart = maxDate(monthStart, habitStart);
+
+    let streak: number;
+    let record: number;
+    let expected: number;
+    let monthDone: number;
+
+    if (isCalendarSchedule(schedule)) {
+      // Takvim tabanlı plan: sırası gelen günler geçmişten bağımsız hesaplanır.
+      const scanStart = maxDate(habitStart, addDays(today, -SCAN_DAYS));
+      const occurrences = dueDatesInRange(
+        schedule,
+        scanStart,
+        today,
+        sortedDates,
+        createdAnchor
+      );
+      ({ streak, record } = occurrenceStreaks(occurrences, dates, today));
+      // Yüzde yalnız planlı günlere bakar; plan dışı işaretlemeler oranı şişirmez.
+      const monthOccurrences = occurrences.filter((date) => date >= pctStart);
+      expected = monthOccurrences.length;
+      monthDone = monthOccurrences.filter((date) => dates.has(date)).length;
+    } else {
+      ({ streak, record } = gapStreaks(sortedDates, today, schedule.intervalDays));
+      // Pay da payda da TUR sayar. Ham kayıt sayılsaydı 14 günde bir planlı bir
+      // şeyi her gün yapmak %750 üretir, cap de bunu gizlerdi.
+      const elapsedInWindow = daysBetween(pctStart, today) + 1;
+      expected = Math.max(1, Math.ceil(elapsedInWindow / schedule.intervalDays));
+      monthDone = countCycles(sortedDates, schedule.intervalDays, pctStart, today);
     }
-    const monthPct = elapsed > 0 ? Math.round((monthDone / elapsed) * 100) : 0;
+    const monthPct =
+      expected > 0 ? Math.min(100, Math.round((monthDone / expected) * 100)) : 0;
 
     return {
       id: h.id,
       name: h.name,
       measurementRequired: h.measurement_required === 1,
-      doneToday: !!todayRow,
+      schedule,
+      scheduleLabel: h.scheduleLabel,
+      dueToday,
+      // Bugün yapılmış olsa bile sıradaki gün gösterilir — periyodik planın
+      // asıl faydası "ne zaman tekrar?" bilgisidir.
+      nextDue: nextDueDate(schedule, today, lastDone, createdAnchor),
+      doneToday,
       doneTime: todayRow ? todayRow.time : null,
       streak,
       record,
@@ -216,7 +348,9 @@ export function getState(): AppState {
     };
   });
 
-  const doneCount = habitStates.filter((h) => h.doneToday).length;
+  // Skor yalnız bugün sırası gelen alışkanlıkları sayar.
+  const dueHabits = habitStates.filter((h) => h.dueToday);
+  const doneCount = dueHabits.filter((h) => h.doneToday).length;
 
   // Isı haritası: son heatWeeks hafta, gün başına yapılan alışkanlık adedi.
   // Sabit sayı (kaydırmasız mobilde sığar); en yeni gün en solda gösterilir.
@@ -233,14 +367,17 @@ export function getState(): AppState {
     const dt = addDays(heatStart, i);
     heatmap.push({ date: dt, count: countMap.get(dt) || 0 });
   }
+  // Periyodik planlarda günlük hedef sabit değil; skala penceredeki en yoğun güne göre.
+  const heatMax = Math.max(1, ...heatmap.map((cell) => cell.count));
 
   return {
     today,
     habits: habitStates,
     measurementTypes: getMeasurementTypes(true),
-    score: { done: doneCount, total: habits.length },
+    score: { done: doneCount, total: dueHabits.length },
     heatmap,
     heatWeeks,
+    heatMax,
     tasks: getTaskStats(today),
   };
 }
@@ -292,13 +429,70 @@ export function deleteHabit(habitId: number): void {
   tx();
 }
 
+/** Bir alışkanlığın periyodik planını değiştirir. */
+export function setHabitSchedule(habitId: number, input: ScheduleInput): void {
+  const d = db();
+  if (!d.prepare("SELECT 1 FROM habits WHERE id = ?").get(habitId)) {
+    throw new InputError("Alışkanlık bulunamadı.");
+  }
+
+  // Bozuk gövde sessizce "her gün"e düşmemeli — kullanıcı planını kaybettiğini
+  // fark etmez. Nesne olmayan her şey açık hata verir.
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new InputError("Geçersiz plan verisi.");
+  }
+  if (input.kind !== "daily" && input.kind !== "interval" && input.kind !== "weekly") {
+    throw new InputError("Geçersiz plan tipi.");
+  }
+
+  const kind: ScheduleKind = input.kind;
+
+  let intervalDays = 1;
+  let anchorMode: AnchorMode = "last";
+  let anchorDate: string | null = null;
+  let weekdays = "";
+
+  if (kind === "interval") {
+    intervalDays = Math.trunc(Number(input.intervalDays));
+    if (!Number.isFinite(intervalDays) || intervalDays < 1 || intervalDays > 365) {
+      throw new InputError("Aralık 1 ile 365 gün arasında olmalı.");
+    }
+    anchorMode = input.anchorMode === "fixed" ? "fixed" : "last";
+    if (anchorMode === "fixed") {
+      const given = typeof input.anchorDate === "string" ? input.anchorDate.trim() : "";
+      if (given && !isValidISODate(given)) {
+        throw new InputError("Başlangıç günü geçerli bir tarih olmalı.");
+      }
+      anchorDate = given || todayISO();
+    }
+  }
+
+  if (kind === "weekly") {
+    const days = [
+      ...new Set(
+        (Array.isArray(input.weekdays) ? input.weekdays : [])
+          .map((n) => Math.trunc(Number(n)))
+          .filter((n) => Number.isInteger(n) && n >= 1 && n <= 7)
+      ),
+    ].sort((a, b) => a - b);
+    if (days.length === 0) throw new InputError("En az bir gün seç.");
+    weekdays = days.join(",");
+  }
+
+  d.prepare(
+    `UPDATE habits
+     SET schedule_kind = ?, interval_days = ?, anchor_mode = ?, anchor_date = ?, weekdays = ?
+     WHERE id = ?`
+  ).run(kind, intervalDays, anchorMode, anchorDate, weekdays, habitId);
+}
+
 export function setMeasurementHabit(habitId: number | null): void {
   const d = db();
   if (
     habitId !== null &&
     !d.prepare("SELECT 1 FROM habits WHERE id = ?").get(habitId)
   ) {
-    throw new Error("Alışkanlık bulunamadı.");
+    throw new InputError("Alışkanlık bulunamadı.");
   }
   const tx = d.transaction(() => {
     d.prepare("UPDATE habits SET measurement_required = 0").run();
@@ -434,6 +628,9 @@ export function getMeasurementHistory(limit = 365): MeasurementHistoryEntry[] {
 /** Geçmiş bir günü işaretle/kaldır. Elle eklenen kayda nötr saat (12:00) verilir. */
 export function toggleHabitOnDate(habitId: number, date: string, on: boolean, time = "12:00"): void {
   const d = db();
+  // Çöp tarih plan hesabını bozar (sıralı kayıt varsayımı çöker), bu yüzden
+  // veritabanına hiç girmesin.
+  if (!isValidISODate(date)) throw new InputError("Geçersiz tarih.");
   if (on) {
     d.prepare(
       `INSERT INTO logs (habit_id, date, time) VALUES (?, ?, ?)
@@ -467,16 +664,45 @@ export function getHistory(days = 90): HistoryState {
     byDate.get(r.date)![r.habit_id] = r.time;
   }
 
+  // Planlı günler: "son yapılıştan say" modu pencere öncesindeki kayıtlara da
+  // baktığı için alışkanlığın TÜM geçmişi çekilir, dueness pencerede hesaplanır.
+  const plannedByHabit = new Map<number, Set<string>>();
+  const allLogs = d.prepare("SELECT date FROM logs WHERE habit_id = ? ORDER BY date");
+  for (const h of habits) {
+    const sortedDates = (allLogs.all(h.id) as { date: string }[]).map((r) => r.date);
+    const createdAnchor = habitCreatedDate(h.created_at, today);
+    // Alışkanlık henüz yokken geçen günler "kaçırılmış" sayılmaz.
+    const habitStart = sortedDates.length
+      ? minDate(sortedDates[0], createdAnchor)
+      : createdAnchor;
+    const from = maxDate(start, habitStart);
+    plannedByHabit.set(
+      h.id,
+      new Set(dueDatesInRange(h.schedule, from, today, sortedDates, createdAnchor))
+    );
+  }
+
   const daysArr: HistoryDay[] = [];
   for (let i = 0; i < days; i++) {
     const dt = addDays(today, -i); // en yeni önce
     const dayMarks = byDate.get(dt) || {};
     const marks: Record<number, string | null> = {};
-    for (const h of habits) marks[h.id] = dayMarks[h.id] ?? null;
-    daysArr.push({ date: dt, isToday: dt === today, marks });
+    const planned: Record<number, boolean> = {};
+    for (const h of habits) {
+      marks[h.id] = dayMarks[h.id] ?? null;
+      planned[h.id] = plannedByHabit.get(h.id)!.has(dt);
+    }
+    daysArr.push({ date: dt, isToday: dt === today, marks, planned });
   }
 
-  return { habits: habits.map((h) => ({ id: h.id, name: h.name })), days: daysArr };
+  return {
+    habits: habits.map((h) => ({
+      id: h.id,
+      name: h.name,
+      scheduleLabel: h.scheduleLabel,
+    })),
+    days: daysArr,
+  };
 }
 
 /* ————————————————————————————— Görev sayacı ————————————————————————————— */

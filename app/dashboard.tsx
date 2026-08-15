@@ -25,6 +25,19 @@ function fmtDate(iso: string) {
   };
 }
 
+/** "17 Ağu" · yarın/öbür gün ise gün adı yerine yakınlık yazar. */
+function fmtNextDue(iso: string, today: string) {
+  const diff = Math.round(
+    (new Date(iso + "T12:00:00").getTime() - new Date(today + "T12:00:00").getTime()) / 86400000
+  );
+  if (diff === 1) return "yarın";
+  if (diff === 2) return "öbür gün";
+  return new Date(iso + "T12:00:00").toLocaleDateString("tr-TR", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
 type TaskTitlePart =
   | { type: "text"; value: string }
   | { type: "link"; url: string; number: number };
@@ -99,14 +112,17 @@ function HabitCard({
   habit,
   index,
   busy,
+  today,
   onToggle,
 }: {
   habit: HabitState;
   index: number;
   busy: boolean;
+  today: string;
   onToggle: (on: boolean) => void;
 }) {
   const done = habit.doneToday;
+  const periodic = habit.scheduleLabel !== "her gün";
   return (
     <button
       onClick={() => !busy && onToggle(!done)}
@@ -135,6 +151,18 @@ function HabitCard({
         {habit.name}
       </h3>
 
+      {periodic && (
+        <span
+          className={`label mt-1.5 inline-block self-start px-1.5 py-0.5 text-[0.5rem] leading-tight ${
+            done
+              ? "bg-[var(--color-cream)]/20 text-[var(--color-cream)]"
+              : "bg-[var(--color-pop-pale)] text-[var(--color-pop-deep)]"
+          }`}
+        >
+          {habit.scheduleLabel}
+        </span>
+      )}
+
       <div className="mt-auto pt-2">
         <div className="flex items-end gap-1.5">
           <span
@@ -150,7 +178,7 @@ function HabitCard({
               done ? "text-[var(--color-cream)]/80" : "text-[var(--color-muted)]"
             }`}
           >
-            gün
+            {periodic ? "kez" : "gün"}
             <br />
             üst üste
           </span>
@@ -163,6 +191,15 @@ function HabitCard({
           RKR {habit.record} · AY %{habit.monthPct}
           {done && habit.doneTime ? ` · ${habit.doneTime}` : ""}
         </div>
+        {periodic && done && habit.nextDue && (
+          <div
+            className={`label text-[0.58rem] mt-1 ${
+              done ? "text-[var(--color-cream)]" : "text-[var(--color-pop-deep)]"
+            }`}
+          >
+            sıradaki {fmtNextDue(habit.nextDue, today)}
+          </div>
+        )}
       </div>
     </button>
   );
@@ -682,6 +719,8 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   }
 
   const { gun, tarih } = fmtDate(state.today);
+  const dueHabits = state.habits.filter((h) => h.dueToday);
+  const upcomingHabits = state.habits.filter((h) => !h.dueToday);
 
   return (
     <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto pb-16">
@@ -758,17 +797,64 @@ export default function Dashboard({ initial }: { initial: AppState }) {
       {/* ————— BUGÜN ————— */}
       <section className="rise mb-8" style={{ animationDelay: "60ms" }}>
         <Band>bugün ▸ tıkla ve işaretle</Band>
-        <div className="grid grid-cols-2 gap-3">
-          {state.habits.map((h, i) => (
-            <HabitCard
-              key={h.id}
-              habit={h}
-              index={i}
-              busy={habitBusy === h.id || measurementHabit?.id === h.id}
-              onToggle={(on) => toggleHabit(h.id, on)}
-            />
-          ))}
-        </div>
+        {dueHabits.length === 0 ? (
+          <p className="brut-sm bg-[var(--color-cream)] px-3 py-3 label text-[0.68rem]">
+            bugün planlı alışkanlık yok ✓
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {dueHabits.map((h, i) => (
+              <HabitCard
+                key={h.id}
+                habit={h}
+                index={i}
+                today={state.today}
+                busy={habitBusy === h.id || measurementHabit?.id === h.id}
+                onToggle={(on) => toggleHabit(h.id, on)}
+              />
+            ))}
+          </div>
+        )}
+
+        {upcomingHabits.length > 0 && (
+          <div className="mt-4">
+            <p className="label text-[0.58rem] text-[var(--color-muted)] mb-2">
+              sırası gelmedi ▸ erken yapacaksan tıkla
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {upcomingHabits.map((h) => (
+                <button
+                  key={h.id}
+                  type="button"
+                  onClick={() => toggleHabit(h.id, true)}
+                  disabled={habitBusy === h.id || measurementHabit?.id === h.id}
+                  aria-label={`${h.name} — ${h.scheduleLabel}, sıradaki ${
+                    h.nextDue ? fmtNextDue(h.nextDue, state.today) : "bilinmiyor"
+                  }. Erken işaretlemek için dokun.`}
+                  className="press flex min-h-11 items-center gap-2.5 border-2 border-dashed border-[var(--color-line)] bg-transparent px-3 py-2 text-left transition-colors hover:bg-[var(--color-cream)] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-pop-deep)]"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-4 shrink-0 border-2 border-dashed border-[var(--color-muted)]"
+                  />
+                  {/* Ad her zaman öncelikli: plan etiketi de kırpılabilir, böylece
+                      uzun etiket adı sıfıra indiremiyor. */}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-display font-bold uppercase text-[0.85rem]">
+                      {h.name}
+                    </span>
+                    <span className="label truncate text-[0.55rem] text-[var(--color-muted)]">
+                      {h.scheduleLabel}
+                    </span>
+                  </span>
+                  <span className="label shrink-0 text-[0.6rem] font-bold text-[var(--color-pop-deep)]">
+                    {h.nextDue ? fmtNextDue(h.nextDue, state.today) : "—"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ————— GENEL GÖREVLER ————— */}
@@ -953,7 +1039,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
       <section className="rise mb-8" style={{ animationDelay: "240ms" }}>
         <Band>tutarlılık // koyu = çok alışkanlık</Band>
         <div className="brut-sm bg-[var(--color-cream)] p-3">
-          <HeatMap cells={state.heatmap} total={state.score.total} />
+          <HeatMap cells={state.heatmap} total={state.heatMax} />
         </div>
       </section>
 

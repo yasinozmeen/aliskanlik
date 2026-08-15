@@ -83,10 +83,36 @@ function migrate(d: Database.Database) {
   `);
 
   const habitColumns = d.pragma("table_info(habits)") as { name: string }[];
-  if (!habitColumns.some((column) => column.name === "measurement_required")) {
+  const hasColumn = (name: string) => habitColumns.some((column) => column.name === name);
+
+  if (!hasColumn("measurement_required")) {
     d.exec(
       "ALTER TABLE habits ADD COLUMN measurement_required INTEGER NOT NULL DEFAULT 0"
     );
+  }
+
+  // Periyodik plan: alışkanlık her gün değil, N günde bir ya da haftanın belirli
+  // günlerinde sırası gelebilir. Mevcut kayıtlar varsayılan olarak 'daily' kalır.
+  //   schedule_kind : 'daily' | 'interval' | 'weekly'
+  //   interval_days : 'interval' için kaç günde bir
+  //   anchor_mode   : 'last'  = son yapılıştan itibaren say (kaçırınca sıra kayar)
+  //                   'fixed' = anchor_date'ten itibaren sabit takvim
+  //   anchor_date   : 'fixed' modun başlangıç günü (YYYY-MM-DD)
+  //   weekdays      : 'weekly' için "1,4" (1=Pazartesi … 7=Pazar)
+  if (!hasColumn("schedule_kind")) {
+    d.exec("ALTER TABLE habits ADD COLUMN schedule_kind TEXT NOT NULL DEFAULT 'daily'");
+  }
+  if (!hasColumn("interval_days")) {
+    d.exec("ALTER TABLE habits ADD COLUMN interval_days INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!hasColumn("anchor_mode")) {
+    d.exec("ALTER TABLE habits ADD COLUMN anchor_mode TEXT NOT NULL DEFAULT 'last'");
+  }
+  if (!hasColumn("anchor_date")) {
+    d.exec("ALTER TABLE habits ADD COLUMN anchor_date TEXT");
+  }
+  if (!hasColumn("weekdays")) {
+    d.exec("ALTER TABLE habits ADD COLUMN weekdays TEXT NOT NULL DEFAULT ''");
   }
 
   const c = (d.prepare("SELECT COUNT(*) AS c FROM habits").get() as { c: number }).c;

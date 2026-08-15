@@ -1,5 +1,5 @@
 import { cookies, headers } from "next/headers";
-import { authToken, COOKIE_NAME } from "./auth";
+import { COOKIE_NAME, tokenMatches } from "./auth";
 
 export async function isAuthed(): Promise<boolean> {
   // Yerelde giriş adımını atla; canlı alan adında şifre koruması sürer.
@@ -9,5 +9,5 @@ export async function isAuthed(): Promise<boolean> {
   if (/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(host)) return true;
 
   const store = await cookies();
-  return store.get(COOKIE_NAME)?.value === authToken();
+  return tokenMatches(store.get(COOKIE_NAME)?.value);
 }

@@ -15,6 +15,14 @@ export function authToken(): string {
   return createHmac("sha256", authSecret()).update("aliskanlik-auth-v1").digest("hex");
 }
 
+/** Çerezdeki jetonu beklenenle zamanlama-güvenli karşılaştırır. */
+export function tokenMatches(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const actual = Buffer.from(value);
+  const expected = Buffer.from(authToken());
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
 export function checkPassword(password: unknown): boolean {
   const expected = process.env.APP_PASSWORD || "";
   if (!expected || typeof password !== "string") return false;
