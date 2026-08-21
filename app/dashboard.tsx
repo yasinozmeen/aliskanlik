@@ -723,7 +723,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   const upcomingHabits = state.habits.filter((h) => !h.dueToday);
 
   return (
-    <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto pb-16">
+    <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto pb-16 md:max-w-5xl md:grid md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_400px] md:gap-x-8 md:items-start">
       {measurementHabit && (
         <MeasurementModal
           habitName={measurementHabit.name}
@@ -772,7 +772,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
       )}
 
       {/* ————— MASTHEAD ————— */}
-      <header className="rise flex items-start justify-between mb-6">
+      <header className="rise flex items-start justify-between mb-6 md:col-span-full md:mb-8">
         <div className="min-w-0">
           <h1 className="font-display font-black uppercase leading-[0.85] text-[clamp(2rem,10.5vw,3.2rem)] tracking-tight">
             Alışkanlık
@@ -794,8 +794,9 @@ export default function Dashboard({ initial }: { initial: AppState }) {
         </div>
       </header>
 
-      {/* ————— BUGÜN ————— */}
-      <section className="rise mb-8" style={{ animationDelay: "60ms" }}>
+      <div className="flex flex-col">
+        {/* ————— BUGÜN (SOL SÜTUN) ————— */}
+        <section className="rise mb-8" style={{ animationDelay: "60ms" }}>
         <Band>bugün ▸ tıkla ve işaretle</Band>
         {dueHabits.length === 0 ? (
           <p className="brut-sm bg-[var(--color-cream)] px-3 py-3 label text-[0.68rem]">
@@ -855,9 +856,11 @@ export default function Dashboard({ initial }: { initial: AppState }) {
             </div>
           </div>
         )}
-      </section>
+        </section>
+      </div>
 
-      {/* ————— GENEL GÖREVLER ————— */}
+      <div className="flex flex-col">
+        {/* ————— GENEL GÖREVLER (SAĞ SÜTUN) ————— */}
       <section className="rise mb-8" style={{ animationDelay: "120ms" }}>
         <Band
           action={
@@ -890,19 +893,24 @@ export default function Dashboard({ initial }: { initial: AppState }) {
             }}
             className="drop brut-sm bg-[var(--color-cream)] px-3 py-2.5 mb-3 flex items-center gap-2"
           >
-            <input
+            <textarea
               autoFocus
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Escape") {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  addTask();
+                } else if (e.key === "Escape") {
                   setNewTitle("");
                   setAdding(false);
                 }
               }}
               disabled={addBusy}
               placeholder="görev yaz, enter'a bas…"
-              className="flex-1 min-w-0 bg-transparent outline-none font-body text-[0.9rem] placeholder:text-[var(--color-muted)]"
+              rows={1}
+              style={{ fieldSizing: "content" } as any}
+              className="flex-1 min-w-0 bg-transparent outline-none font-body text-[0.9rem] placeholder:text-[var(--color-muted)] resize-none overflow-hidden pt-1"
             />
             <button
               type="submit"
@@ -942,17 +950,23 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                   >
                     görevi düzenle
                   </label>
-                  <input
+                  <textarea
                     id={`task-title-${task.id}`}
                     autoFocus
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Escape") cancelEditingTask();
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        saveTaskTitle(task.id);
+                      }
                     }}
                     disabled={editBusy}
                     maxLength={500}
-                    className="mt-1.5 min-h-11 w-full border-2 border-[var(--color-ink)] bg-[var(--color-cream-2)] px-2.5 font-body text-base outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-pop)] focus-visible:ring-offset-2"
+                    rows={1}
+                    style={{ fieldSizing: "content" } as any}
+                    className="mt-1.5 min-h-11 w-full border-2 border-[var(--color-ink)] bg-[var(--color-cream-2)] px-2.5 py-2.5 font-body text-base outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-pop)] focus-visible:ring-offset-2 resize-none overflow-hidden"
                   />
                   {editError && (
                     <p role="alert" className="mt-2 text-sm font-semibold text-[var(--color-pop-deep)]">
@@ -1071,6 +1085,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
       <p className="label text-[0.55rem] text-[var(--color-muted)] text-center">
         alışkanlık takibi — brutalist
       </p>
+      </div>
     </main>
   );
 }
