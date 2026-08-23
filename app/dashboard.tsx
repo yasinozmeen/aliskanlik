@@ -425,15 +425,21 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   const [duaOpen, setDuaOpen] = useState(false);
 
   const loadTasks = useCallback(async () => {
+    let hasCache = false;
     try {
       const cached = localStorage.getItem("tasksCache");
       if (cached) {
         const parsed = JSON.parse(cached);
         setTasks(parsed.tasks);
         setState((s) => ({ ...s, tasks: parsed.stats }));
+        hasCache = true;
       }
     } catch (e) {
       // Ignore cache parse error
+    }
+    
+    if (hasCache) {
+      setTasksLoading(false);
     }
 
     try {
