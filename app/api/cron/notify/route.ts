@@ -110,9 +110,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, sent: false, reason: "Bu periyotta bildirilecek görev yok." });
   }
 
-  const text = `🔔 *Hatırlatma Zamanı!*\n\n${toNotify
-    .map((h) => `— ${h.name}`)
-    .join("\n")}\n\n[Sisteme Git](https://aliskanlik.yasinozmeen.me)`;
+  const text = `🔔 *Hatırlatma Zamanı!*\n\nAşağıdaki görevleri tamamladın mı?`;
+
+  const inline_keyboard = toNotify.map((h) => [
+    { text: `✅ ${h.name}`, callback_data: `done_${h.id}` }
+  ]);
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -123,6 +125,9 @@ export async function GET(req: Request) {
         text,
         parse_mode: "Markdown",
         disable_web_page_preview: true,
+        reply_markup: {
+          inline_keyboard
+        }
       }),
     });
 
