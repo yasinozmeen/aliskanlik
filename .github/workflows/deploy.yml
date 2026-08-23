@@ -30,6 +30,9 @@ jobs:
             -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
             -e GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             -e GOOGLE_REFRESH_TOKEN="${{ secrets.GOOGLE_REFRESH_TOKEN }}" \
+            -e CRON_SECRET="${{ secrets.CRON_SECRET }}" \
+            -e TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            -e TELEGRAM_CHAT_ID="${{ secrets.TELEGRAM_CHAT_ID }}" \
             aliskanlik:latest
 
       - name: Health check

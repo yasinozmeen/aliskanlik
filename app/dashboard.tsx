@@ -559,6 +559,17 @@ export default function Dashboard({ initial }: { initial: AppState }) {
 
   const loadTasks = useCallback(async () => {
     try {
+      const cached = localStorage.getItem("tasksCache");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        setTasks(parsed.tasks);
+        setState((s) => ({ ...s, tasks: parsed.stats }));
+      }
+    } catch (e) {
+      // Ignore cache parse error
+    }
+
+    try {
       const r = await fetch("/api/tasks");
       if (!r.ok) return;
       const j = await r.json();
@@ -573,6 +584,12 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   useEffect(() => {
     loadTasks();
   }, [loadTasks]);
+
+  useEffect(() => {
+    if (!tasksLoading) {
+      localStorage.setItem("tasksCache", JSON.stringify({ tasks, stats: state.tasks }));
+    }
+  }, [tasks, state.tasks, tasksLoading]);
 
   async function toggleHabit(habitId: number, on: boolean) {
     const habit = state.habits.find((item) => item.id === habitId);
@@ -896,7 +913,11 @@ export default function Dashboard({ initial }: { initial: AppState }) {
             <textarea
               autoFocus
               value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
+              onChange={(e) => {
+                setNewTitle(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = `${e.target.scrollHeight}px`;
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -909,7 +930,6 @@ export default function Dashboard({ initial }: { initial: AppState }) {
               disabled={addBusy}
               placeholder="görev yaz, enter'a bas…"
               rows={1}
-              style={{ fieldSizing: "content" } as any}
               className="flex-1 min-w-0 bg-transparent outline-none font-body text-[0.9rem] placeholder:text-[var(--color-muted)] resize-none overflow-hidden pt-1"
             />
             <button
@@ -933,7 +953,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
             tüm görevler tamam ✓
           </p>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 max-h-[70vh] overflow-y-auto pr-1 pb-1">
             {tasks.map((task) =>
               editingTaskId === task.id ? (
                 <form
@@ -954,7 +974,11 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                     id={`task-title-${task.id}`}
                     autoFocus
                     value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
+                    onChange={(e) => {
+                      setEditTitle(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = `${e.target.scrollHeight}px`;
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Escape") cancelEditingTask();
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -965,7 +989,6 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                     disabled={editBusy}
                     maxLength={500}
                     rows={1}
-                    style={{ fieldSizing: "content" } as any}
                     className="mt-1.5 min-h-11 w-full border-2 border-[var(--color-ink)] bg-[var(--color-cream-2)] px-2.5 py-2.5 font-body text-base outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-pop)] focus-visible:ring-offset-2 resize-none overflow-hidden"
                   />
                   {editError && (
