@@ -267,18 +267,18 @@ export default function Ayarlar({
 
 
   return (
-    <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto pb-16">
-      <header className="rise flex items-center justify-between mb-6">
-        <h1 className="font-display font-black uppercase text-3xl leading-none">Ayarlar</h1>
+    <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto md:max-w-4xl pb-16">
+      <header className="rise flex items-center justify-between mb-6 md:mb-8">
+        <h1 className="font-display font-black uppercase text-3xl md:text-4xl leading-none">Ayarlar</h1>
         <Link
           href="/"
-          className="press brut-sm bg-[var(--color-cream)] px-3 py-2 font-mono text-sm"
+          className="press brut-sm bg-[var(--color-cream)] px-3 py-2 md:px-4 md:py-2.5 font-mono text-sm md:text-base"
         >
           ← geri
         </Link>
       </header>
 
-      <p className="label text-[0.62rem] text-[var(--color-muted)] mb-4 leading-relaxed">
+      <p className="label text-[0.62rem] md:text-[0.7rem] text-[var(--color-muted)] mb-4 md:mb-6 leading-relaxed md:max-w-xl">
         alışkanlık ekle, adını değiştir veya pasif yap. pasif alışkanlıklar
         dashboard&apos;da görünmez ama kayıtları saklanır.
       </p>
@@ -310,7 +310,7 @@ export default function Ayarlar({
       )}
 
       {/* Liste */}
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col md:grid md:grid-cols-2 lg:grid-cols-3 gap-2.5 md:gap-4">
         {habits.map((h) => (
           <div
             key={h.id}

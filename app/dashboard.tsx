@@ -564,7 +564,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   const upcomingHabits = state.habits.filter((h) => !h.dueToday);
 
   return (
-    <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto pb-16 md:max-w-5xl md:grid md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_400px] md:gap-x-8 md:items-start">
+    <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto pb-16 md:max-w-[72rem] md:grid md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_420px] md:gap-x-8 md:items-start">
 
       {duaOpen && (
         <div
