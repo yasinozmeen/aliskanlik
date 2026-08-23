@@ -452,12 +452,30 @@ export default function Ayarlar({
               </button>
             </div>
 
+
+            <button
+              type="button"
+              ref={(node) => {
+                notifyButtonRefs.current[h.id] = node;
+              }}
+              onClick={() => { setScheduleOpen(null); setNotifyOpen((current) => (current === h.id ? null : h.id)); }}
+              aria-expanded={notifyOpen === h.id}
+              className="press flex w-full min-h-11 items-center justify-between border-t-2 border-dashed border-[var(--color-line)] px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop-deep)]"
+            >
+              <span className="label text-[0.56rem] text-[var(--color-muted)]">bildirim</span>
+              <span className="label flex items-center gap-1.5 text-[0.6rem] font-bold">
+                {h.notify_mode === 'standard' ? '21:00 (Standart)' : h.notify_mode === 'off' ? 'Kapalı' : h.notify_mode === 'custom' ? h.notify_time : h.notify_interval + ' saatte bir'}
+                <span className="font-mono text-[var(--color-pop-deep)]">
+                  {notifyOpen === h.id ? "▴" : "▾"}
+                </span>
+              </span>
+            </button>
             <button
               type="button"
               ref={(node) => {
                 planButtonRefs.current[h.id] = node;
               }}
-              onClick={() => setScheduleOpen((current) => (current === h.id ? null : h.id))}
+              onClick={() => { setNotifyOpen(null); setScheduleOpen((current) => (current === h.id ? null : h.id)); }}
               aria-expanded={scheduleOpen === h.id}
               aria-label={`${h.name} planı: ${h.scheduleLabel}. Değiştirmek için aç.`}
               className="press flex w-full min-h-11 items-center justify-between border-t-2 border-dashed border-[var(--color-line)] px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop-deep)]"
@@ -471,6 +489,18 @@ export default function Ayarlar({
               </span>
             </button>
 
+
+            {notifyOpen === h.id && (
+              <NotifyEditor
+                habit={h}
+                busy={busy}
+                onCancel={() => closeNotify(h.id)}
+                onSave={async (notify) => {
+                  const saved = await act("setNotification", { habitId: h.id, notify });
+                  if (saved) closeNotify(h.id);
+                }}
+              />
+            )}
             {scheduleOpen === h.id && (
               <ScheduleEditor
                 habit={h}
