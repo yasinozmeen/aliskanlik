@@ -84,6 +84,20 @@ function migrate(d: Database.Database) {
     d.exec("ALTER TABLE habits ADD COLUMN weekdays TEXT NOT NULL DEFAULT ''");
   }
 
+  // Bildirim Ayarları
+  if (!hasColumn("notify_mode")) {
+    d.exec("ALTER TABLE habits ADD COLUMN notify_mode TEXT NOT NULL DEFAULT 'standard'");
+  }
+  if (!hasColumn("notify_time")) {
+    d.exec("ALTER TABLE habits ADD COLUMN notify_time TEXT");
+  }
+  if (!hasColumn("notify_interval")) {
+    d.exec("ALTER TABLE habits ADD COLUMN notify_interval INTEGER");
+  }
+  if (!hasColumn("last_notified_at")) {
+    d.exec("ALTER TABLE habits ADD COLUMN last_notified_at TEXT");
+  }
+
   const c = (d.prepare("SELECT COUNT(*) AS c FROM habits").get() as { c: number }).c;
   if (c === 0) seed(d);
 }

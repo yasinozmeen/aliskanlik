@@ -203,6 +203,103 @@ function ScheduleEditor({
   );
 }
 
+
+function NotifyEditor({
+  habit,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  habit: Habit;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (notify: Record<string, unknown>) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<"standard" | "custom" | "periodic" | "off">(habit.notify_mode);
+  const [time, setTime] = useState(habit.notify_time ?? "");
+  const [interval, setInterval] = useState(String(habit.notify_interval ?? 3));
+
+  const intervalValid = /^\d+$/.test(interval) && Number(interval) >= 1;
+  const timeValid = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time);
+  
+  const valid =
+    mode === "standard" ||
+    mode === "off" ||
+    (mode === "custom" && timeValid) ||
+    (mode === "periodic" && intervalValid);
+
+  return (
+    <div className="border-t border-[var(--color-line)] p-3 flex flex-col gap-3 bg-[var(--color-pop-pale)]">
+      <div className="flex flex-col gap-1">
+        <label className="label text-[0.62rem]">Bildirim Tipi</label>
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as any)}
+          className="border-2 border-[var(--color-ink)] bg-[var(--color-cream)] px-2 py-1.5 font-mono text-sm outline-none focus:bg-white"
+        >
+          <option value="standard">Standart (21:00)</option>
+          <option value="custom">Özel Saat (Günde bir kez)</option>
+          <option value="periodic">Periyodik (Gün boyu)</option>
+          <option value="off">Kapalı</option>
+        </select>
+      </div>
+
+      {mode === "custom" && (
+        <div className="flex flex-col gap-1">
+          <label className="label text-[0.62rem]">Bildirim Saati (HH:MM)</label>
+          <input
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            className="border-2 border-[var(--color-ink)] bg-[var(--color-cream)] px-2 py-1.5 font-mono text-sm outline-none focus:bg-white"
+          />
+        </div>
+      )}
+
+      {mode === "periodic" && (
+        <div className="flex flex-col gap-1">
+          <label className="label text-[0.62rem]">Kaç Saatte Bir?</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="1"
+              value={interval}
+              onChange={(e) => setInterval(e.target.value)}
+              className="w-16 border-2 border-[var(--color-ink)] bg-[var(--color-cream)] px-2 py-1.5 font-mono text-sm outline-none focus:bg-white"
+            />
+            <span className="label text-[0.6rem] text-[var(--color-muted)]">saatte bir</span>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="press min-h-11 border-2 border-[var(--color-ink)] bg-[var(--color-cream)] label text-[0.6rem] disabled:opacity-40"
+        >
+          vazgeç
+        </button>
+        <button
+          type="button"
+          disabled={busy || !valid}
+          onClick={() =>
+            onSave({
+              mode,
+              time: mode === "custom" ? time : null,
+              interval: mode === "periodic" ? Number(interval) : null,
+            })
+          }
+          className="press min-h-11 border-2 border-[var(--color-ink)] bg-[var(--color-pop)] label text-[0.6rem] font-bold disabled:opacity-40"
+        >
+          {busy ? "…" : "kaydet"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Ayarlar({
   initial,
 }: {
@@ -212,6 +309,13 @@ export default function Ayarlar({
   const [yeni, setYeni] = useState("");
   const [busy, setBusy] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState<number | null>(null);
+  const [notifyOpen, setNotifyOpen] = useState<number | null>(null);
+  const notifyButtonRefs = useRef<Record<number, HTMLButtonElement | null>>({});
+
+  function closeNotify(habitId: number) {
+    setNotifyOpen(null);
+    requestAnimationFrame(() => notifyButtonRefs.current[habitId]?.focus());
+  }
   const [habitError, setHabitError] = useState("");
   const planButtonRefs = useRef<Record<number, HTMLButtonElement | null>>({});
 

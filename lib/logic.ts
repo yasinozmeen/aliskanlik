@@ -104,6 +104,10 @@ export type Habit = {
   created_at: string;
   schedule: Schedule;
   scheduleLabel: string;
+  notify_mode: "standard" | "custom" | "periodic" | "off";
+  notify_time: string | null;
+  notify_interval: number | null;
+  last_notified_at: string | null;
 };
 
 /**
@@ -126,7 +130,8 @@ export type ScheduleInput = {
 
 
 const HABIT_COLUMNS = `id, name, active, sort_order, created_at,
-                       schedule_kind, interval_days, anchor_mode, anchor_date, weekdays`;
+                       schedule_kind, interval_days, anchor_mode, anchor_date, weekdays,
+                       notify_mode, notify_time, notify_interval, last_notified_at`;
 
 type HabitRow = Omit<Habit, "schedule" | "scheduleLabel"> & ScheduleRow;
 
@@ -140,6 +145,10 @@ function toHabit(row: HabitRow): Habit {
     created_at: row.created_at,
     schedule,
     scheduleLabel: scheduleLabel(schedule),
+    notify_mode: row.notify_mode,
+    notify_time: row.notify_time,
+    notify_interval: row.notify_interval,
+    last_notified_at: row.last_notified_at,
   };
 }
 
@@ -551,4 +560,40 @@ export function bumpTaskCount(): number {
      ON CONFLICT(date) DO UPDATE SET count = count + 1`
   ).run(today);
   return (d.prepare("SELECT count FROM task_counts WHERE date = ?").get(today) as { count: number }).count;
+}
+
+
+export type NotifyInput = {
+  mode: "standard" | "custom" | "periodic" | "off";
+  time?: string | null;
+  interval?: number | null;
+};
+
+export function setHabitNotification(habitId: number, input: NotifyInput): void {
+  const d = db();
+  if (!d.prepare("SELECT 1 FROM habits WHERE id = ?").get(habitId)) {
+    throw new InputError("Alışkanlık bulunamadı.");
+  }
+  
+  const mode = input.mode;
+  if (!["standard", "custom", "periodic", "off"].includes(mode)) {
+    throw new InputError("Geçersiz bildirim tipi.");
+  }
+  
+  let time = input.time || null;
+  if (time && !/^\d{2}:\d{2}$/.test(time)) {
+    throw new InputError("Geçersiz saat formatı. Beklenen: HH:MM");
+  }
+  
+  let interval = input.interval || null;
+  if (mode === "periodic" && (typeof interval !== "number" || interval < 1)) {
+    throw new InputError("Periyodik bildirim için aralık (saat) 1 veya daha büyük olmalıdır.");
+  }
+  
+  if (mode !== "custom") time = null;
+  if (mode !== "periodic") interval = null;
+
+  d.prepare(
+    `UPDATE habits SET notify_mode = ?, notify_time = ?, notify_interval = ? WHERE id = ?`
+  ).run(mode, time, interval, habitId);
 }

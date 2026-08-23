@@ -8,10 +8,11 @@ import {
   renameHabit,
   deleteHabit,
   setHabitSchedule,
+  setHabitNotification,
   getState,
   InputError,
 } from "@/lib/logic";
-import type { ScheduleInput } from "@/lib/logic";
+import type { ScheduleInput, NotifyInput } from "@/lib/logic";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,9 @@ export async function POST(req: NextRequest) {
         break;
       case "setSchedule":
         setHabitSchedule(Number(payload.habitId), payload.schedule as ScheduleInput);
+        break;
+      case "setNotification":
+        setHabitNotification(Number(payload.habitId), payload.notify as NotifyInput);
         break;
       default:
         return NextResponse.json({ ok: false, error: "unknown type" }, { status: 400 });
