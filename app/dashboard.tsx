@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import type { AppState, HabitState, HeatCell, MeasurementType } from "@/lib/logic";
+import type { AppState, HabitState, HeatCell } from "@/lib/logic";
 
 type GTask = { id: string; title: string };
 const DUA_TEXT =
@@ -405,135 +405,6 @@ function Band({ children, action }: { children: React.ReactNode; action?: React.
   );
 }
 
-function MeasurementModal({
-  habitName,
-  types,
-  values,
-  busy,
-  error,
-  onValueChange,
-  onCancel,
-  onSave,
-}: {
-  habitName: string;
-  types: MeasurementType[];
-  values: Record<number, string>;
-  busy: boolean;
-  error: string;
-  onValueChange: (typeId: number, value: string) => void;
-  onCancel: () => void;
-  onSave: () => void;
-}) {
-  const complete = types.length > 0 && types.every((type) => values[type.id]?.trim());
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-ink)]/55 px-4 py-5"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="olcum-baslik"
-      aria-describedby="olcum-aciklama"
-    >
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSave();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && !busy) onCancel();
-        }}
-        className="brut drop w-full max-w-sm max-h-[calc(100dvh-2.5rem)] overflow-y-auto bg-[var(--color-cream)] p-4"
-      >
-        <p className="label text-[0.62rem] text-[var(--color-pop-deep)]">
-          {habitName} // tamamlanıyor
-        </p>
-        <h2
-          id="olcum-baslik"
-          className="font-display font-black uppercase text-[1.7rem] leading-none mt-1"
-        >
-          Ölçüleri kaydet
-        </h2>
-        <p
-          id="olcum-aciklama"
-          className="font-body text-sm leading-relaxed text-[var(--color-muted)] mt-2 mb-4"
-        >
-          Bugünün değerlerini gir. Kaydedince alışkanlık da tamamlanır.
-        </p>
-
-        {types.length === 0 ? (
-          <div className="brut-sm bg-[var(--color-pop-pale)] p-3">
-            <p className="text-sm font-semibold leading-relaxed">
-              Veri girmek için önce Ayarlar&apos;dan en az bir ölçü alanı ekle.
-            </p>
-            <Link
-              href="/ayarlar"
-              className="press band mt-3 min-h-11 px-3 flex items-center justify-center text-[0.68rem] font-bold"
-            >
-              ölçüm ayarlarına git
-            </Link>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {types.map((type, index) => (
-              <label key={type.id} className="block">
-                <span className="label block text-[0.6rem] font-bold mb-1.5">
-                  {type.name}
-                  {type.unit ? (
-                    <span className="text-[var(--color-muted)]"> // {type.unit}</span>
-                  ) : null}
-                </span>
-                <div className="grid grid-cols-[1fr_auto] border-2 border-[var(--color-ink)] bg-white">
-                  <input
-                    autoFocus={index === 0}
-                    type="text"
-                    inputMode="decimal"
-                    value={values[type.id] ?? ""}
-                    onChange={(event) => onValueChange(type.id, event.target.value)}
-                    disabled={busy}
-                    aria-label={`${type.name}${type.unit ? `, ${type.unit}` : ""}`}
-                    className="min-w-0 min-h-12 bg-transparent px-3 font-mono text-xl font-bold outline-none disabled:opacity-50"
-                  />
-                  {type.unit ? (
-                    <span className="band min-w-14 px-3 grid place-items-center label text-[0.62rem]">
-                      {type.unit}
-                    </span>
-                  ) : null}
-                </div>
-              </label>
-            ))}
-          </div>
-        )}
-
-        {error && (
-          <p
-            role="alert"
-            className="mt-3 bg-[var(--color-pop-pale)] border-2 border-[var(--color-pop-deep)] px-3 py-2 text-sm font-semibold"
-          >
-            {error}
-          </p>
-        )}
-
-        <div className="grid grid-cols-2 gap-2 mt-5">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="press brut-sm min-h-12 bg-[var(--color-cream)] px-3 font-display font-black uppercase text-sm disabled:opacity-50"
-          >
-            vazgeç
-          </button>
-          <button
-            type="submit"
-            disabled={busy || !complete}
-            className="press brut-sm min-h-12 bg-[var(--color-pop)] px-3 font-display font-black uppercase text-sm disabled:opacity-40"
-          >
-            {busy ? "kaydediliyor…" : "kaydet ve bitir"}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
 
 /* ————————————————————————— Ana bileşen ————————————————————————— */
 
@@ -552,10 +423,6 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState("");
   const [duaOpen, setDuaOpen] = useState(false);
-  const [measurementHabit, setMeasurementHabit] = useState<HabitState | null>(null);
-  const [measurementValues, setMeasurementValues] = useState<Record<number, string>>({});
-  const [measurementBusy, setMeasurementBusy] = useState(false);
-  const [measurementError, setMeasurementError] = useState("");
 
   const loadTasks = useCallback(async () => {
     try {
@@ -593,14 +460,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
 
   async function toggleHabit(habitId: number, on: boolean) {
     const habit = state.habits.find((item) => item.id === habitId);
-    if (on && habit?.measurementRequired) {
-      setMeasurementHabit(habit);
-      setMeasurementValues(
-        Object.fromEntries(state.measurementTypes.map((type) => [type.id, ""]))
-      );
-      setMeasurementError("");
-      return;
-    }
+
 
     setHabitBusy(habitId);
     try {
@@ -619,42 +479,6 @@ export default function Dashboard({ initial }: { initial: AppState }) {
     }
   }
 
-  async function saveMeasurements() {
-    if (!measurementHabit || measurementBusy) return;
-    const values = state.measurementTypes.map((type) => ({
-      typeId: type.id,
-      value: Number((measurementValues[type.id] ?? "").trim().replace(",", ".")),
-    }));
-    if (values.some((item) => !Number.isFinite(item.value) || item.value < 0)) {
-      setMeasurementError("Tüm alanlara geçerli, sıfır veya daha büyük bir sayı gir.");
-      return;
-    }
-
-    setMeasurementBusy(true);
-    setMeasurementError("");
-    try {
-      const response = await fetch("/api/measurements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "record",
-          payload: { habitId: measurementHabit.id, values },
-        }),
-      });
-      const json = await response.json();
-      if (!json.ok) {
-        setMeasurementError(json.error || "Ölçümler kaydedilemedi.");
-        return;
-      }
-      setState(json.state);
-      setMeasurementHabit(null);
-      setMeasurementValues({});
-    } catch {
-      setMeasurementError("Bağlantı kurulamadı. Değerler kaydedilmedi; tekrar dene.");
-    } finally {
-      setMeasurementBusy(false);
-    }
-  }
 
   async function completeTask(taskId: string) {
     setTaskBusy(taskId);
@@ -741,24 +565,6 @@ export default function Dashboard({ initial }: { initial: AppState }) {
 
   return (
     <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto pb-16 md:max-w-5xl md:grid md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_400px] md:gap-x-8 md:items-start">
-      {measurementHabit && (
-        <MeasurementModal
-          habitName={measurementHabit.name}
-          types={state.measurementTypes}
-          values={measurementValues}
-          busy={measurementBusy}
-          error={measurementError}
-          onValueChange={(typeId, value) =>
-            setMeasurementValues((current) => ({ ...current, [typeId]: value }))
-          }
-          onCancel={() => {
-            setMeasurementHabit(null);
-            setMeasurementValues({});
-            setMeasurementError("");
-          }}
-          onSave={saveMeasurements}
-        />
-      )}
 
       {duaOpen && (
         <div
@@ -827,7 +633,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                 habit={h}
                 index={i}
                 today={state.today}
-                busy={habitBusy === h.id || measurementHabit?.id === h.id}
+                busy={habitBusy === h.id}
                 onToggle={(on) => toggleHabit(h.id, on)}
               />
             ))}
@@ -845,7 +651,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                   key={h.id}
                   type="button"
                   onClick={() => toggleHabit(h.id, true)}
-                  disabled={habitBusy === h.id || measurementHabit?.id === h.id}
+                  disabled={habitBusy === h.id}
                   aria-label={`${h.name} — ${h.scheduleLabel}, sıradaki ${
                     h.nextDue ? fmtNextDue(h.nextDue, state.today) : "bilinmiyor"
                   }. Erken işaretlemek için dokun.`}

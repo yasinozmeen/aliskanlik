@@ -53,7 +53,6 @@ export function nowHM(): string {
 export type HabitState = {
   id: number;
   name: string;
-  measurementRequired: boolean;
   schedule: Schedule;
   scheduleLabel: string;
   /** Bugün sırası geldi mi (erken işaretlenmişse de true kabul edilir). */
@@ -75,7 +74,6 @@ export type TasksState = { today: number; month: number; streak: number };
 export type AppState = {
   today: string;
   habits: HabitState[];
-  measurementTypes: MeasurementType[];
   score: { done: number; total: number };
   heatmap: HeatCell[];
   heatWeeks: number;
@@ -103,7 +101,6 @@ export type Habit = {
   name: string;
   active: number;
   sort_order: number;
-  measurement_required: number;
   created_at: string;
   schedule: Schedule;
   scheduleLabel: string;
@@ -123,37 +120,12 @@ export type ScheduleInput = {
   weekdays?: number[];
 };
 
-export type MeasurementType = {
-  id: number;
-  name: string;
-  unit: string;
-  active: number;
-  sort_order: number;
-};
 
-export type MeasurementInput = { typeId: number; value: number };
 
-export type MeasurementHistoryValue = {
-  typeId: number;
-  name: string;
-  unit: string;
-  value: number;
-};
 
-export type MeasurementHistoryEntry = {
-  habitId: number;
-  habitName: string;
-  date: string;
-  time: string;
-  values: MeasurementHistoryValue[];
-};
 
-export type MeasurementSettings = {
-  habitId: number | null;
-  types: MeasurementType[];
-};
 
-const HABIT_COLUMNS = `id, name, active, sort_order, measurement_required, created_at,
+const HABIT_COLUMNS = `id, name, active, sort_order, created_at,
                        schedule_kind, interval_days, anchor_mode, anchor_date, weekdays`;
 
 type HabitRow = Omit<Habit, "schedule" | "scheduleLabel"> & ScheduleRow;
@@ -165,7 +137,6 @@ function toHabit(row: HabitRow): Habit {
     name: row.name,
     active: row.active,
     sort_order: row.sort_order,
-    measurement_required: row.measurement_required,
     created_at: row.created_at,
     schedule,
     scheduleLabel: scheduleLabel(schedule),
@@ -180,27 +151,9 @@ export function getHabits(activeOnly = true): Habit[] {
   return (d.prepare(sql).all() as HabitRow[]).map(toHabit);
 }
 
-export function getMeasurementTypes(activeOnly = true): MeasurementType[] {
-  const sql = activeOnly
-    ? `SELECT id, name, unit, active, sort_order FROM measurement_types
-       WHERE active = 1 ORDER BY sort_order, id`
-    : `SELECT id, name, unit, active, sort_order FROM measurement_types
-       ORDER BY sort_order, id`;
-  return db().prepare(sql).all() as MeasurementType[];
-}
 
-export function getMeasurementSettings(): MeasurementSettings {
-  const selected = db()
-    .prepare(
-      `SELECT id FROM habits WHERE measurement_required = 1
-       ORDER BY sort_order, id LIMIT 1`
-    )
-    .get() as { id: number } | undefined;
-  return {
-    habitId: selected?.id ?? null,
-    types: getMeasurementTypes(true),
-  };
-}
+
+
 
 /** Ardışık seri hesabı: verilen gün kümesinden güncel seri + rekor. */
 function computeStreaks(dates: Set<string>, today: string): { streak: number; record: number } {
@@ -332,7 +285,6 @@ export function getState(): AppState {
     return {
       id: h.id,
       name: h.name,
-      measurementRequired: h.measurement_required === 1,
       schedule,
       scheduleLabel: h.scheduleLabel,
       dueToday,
@@ -373,7 +325,6 @@ export function getState(): AppState {
   return {
     today,
     habits: habitStates,
-    measurementTypes: getMeasurementTypes(true),
     score: { done: doneCount, total: dueHabits.length },
     heatmap,
     heatWeeks,
@@ -395,10 +346,6 @@ export function toggleHabit(habitId: number, on: boolean): void {
     ).run(habitId, today, nowHM());
   } else {
     const tx = d.transaction(() => {
-      d.prepare("DELETE FROM measurement_values WHERE habit_id = ? AND date = ?").run(
-        habitId,
-        today
-      );
       d.prepare("DELETE FROM logs WHERE habit_id = ? AND date = ?").run(habitId, today);
     });
     tx();
@@ -422,7 +369,6 @@ export function renameHabit(habitId: number, name: string): void {
 export function deleteHabit(habitId: number): void {
   const d = db();
   const tx = d.transaction(() => {
-    d.prepare("DELETE FROM measurement_values WHERE habit_id = ?").run(habitId);
     d.prepare("DELETE FROM logs WHERE habit_id = ?").run(habitId);
     d.prepare("DELETE FROM habits WHERE id = ?").run(habitId);
   });
@@ -486,144 +432,17 @@ export function setHabitSchedule(habitId: number, input: ScheduleInput): void {
   ).run(kind, intervalDays, anchorMode, anchorDate, weekdays, habitId);
 }
 
-export function setMeasurementHabit(habitId: number | null): void {
-  const d = db();
-  if (
-    habitId !== null &&
-    !d.prepare("SELECT 1 FROM habits WHERE id = ?").get(habitId)
-  ) {
-    throw new InputError("Alışkanlık bulunamadı.");
-  }
-  const tx = d.transaction(() => {
-    d.prepare("UPDATE habits SET measurement_required = 0").run();
-    if (habitId !== null) {
-      d.prepare("UPDATE habits SET measurement_required = 1 WHERE id = ?").run(habitId);
-    }
-  });
-  tx();
-}
 
-export function addMeasurementType(name: string, unit: string): void {
-  const cleanName = name.trim();
-  const cleanUnit = unit.trim();
-  if (!cleanName) throw new Error("Ölçü adı boş bırakılamaz.");
-  const d = db();
-  const max = (
-    d.prepare("SELECT MAX(sort_order) AS m FROM measurement_types").get() as {
-      m: number | null;
-    }
-  ).m ?? -1;
-  d.prepare(
-    `INSERT INTO measurement_types (name, unit, active, sort_order)
-     VALUES (?, ?, 1, ?)`
-  ).run(cleanName, cleanUnit, max + 1);
-}
 
-export function updateMeasurementType(id: number, name: string, unit: string): void {
-  const cleanName = name.trim();
-  if (!cleanName) throw new Error("Ölçü adı boş bırakılamaz.");
-  const result = db()
-    .prepare("UPDATE measurement_types SET name = ?, unit = ? WHERE id = ? AND active = 1")
-    .run(cleanName, unit.trim(), id);
-  if (result.changes === 0) throw new Error("Ölçü alanı bulunamadı.");
-}
 
-export function archiveMeasurementType(id: number): void {
-  db().prepare("UPDATE measurement_types SET active = 0 WHERE id = ?").run(id);
-}
 
-export function recordMeasurements(habitId: number, values: MeasurementInput[]): void {
-  const d = db();
-  const habit = d
-    .prepare("SELECT measurement_required FROM habits WHERE id = ? AND active = 1")
-    .get(habitId) as { measurement_required: number } | undefined;
-  if (!habit || habit.measurement_required !== 1) {
-    throw new Error("Bu alışkanlık ölçüm kaydı için ayarlanmamış.");
-  }
 
-  const types = getMeasurementTypes(true);
-  if (types.length === 0) throw new Error("Önce en az bir ölçü alanı ekleyin.");
-  if (values.length !== types.length) throw new Error("Tüm ölçü alanlarını doldurun.");
 
-  const valueMap = new Map<number, number>();
-  for (const item of values) {
-    if (valueMap.has(item.typeId)) throw new Error("Aynı ölçü birden fazla gönderildi.");
-    if (!Number.isFinite(item.value) || item.value < 0) {
-      throw new Error("Ölçüm değerleri sıfır veya daha büyük bir sayı olmalı.");
-    }
-    valueMap.set(item.typeId, item.value);
-  }
-  if (types.some((type) => !valueMap.has(type.id))) {
-    throw new Error("Tüm ölçü alanlarını doldurun.");
-  }
 
-  const today = todayISO();
-  const time = nowHM();
-  const save = d.transaction(() => {
-    d.prepare(
-      `INSERT INTO logs (habit_id, date, time) VALUES (?, ?, ?)
-       ON CONFLICT(habit_id, date) DO UPDATE SET time = excluded.time`
-    ).run(habitId, today, time);
 
-    const upsert = d.prepare(
-      `INSERT INTO measurement_values
-         (habit_id, measurement_type_id, date, value)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(habit_id, measurement_type_id, date)
-       DO UPDATE SET value = excluded.value, created_at = datetime('now')`
-    );
-    for (const type of types) {
-      upsert.run(habitId, type.id, today, valueMap.get(type.id));
-    }
-  });
-  save();
-}
 
-export function getMeasurementHistory(limit = 365): MeasurementHistoryEntry[] {
-  const safeLimit = Math.max(1, Math.min(2000, Math.trunc(limit)));
-  const rows = db()
-    .prepare(
-      `SELECT mv.habit_id, h.name AS habit_name, mv.date, l.time,
-              mt.id AS type_id, mt.name, mt.unit, mv.value
-       FROM measurement_values mv
-       JOIN measurement_types mt ON mt.id = mv.measurement_type_id
-       JOIN habits h ON h.id = mv.habit_id
-       JOIN logs l ON l.habit_id = mv.habit_id AND l.date = mv.date
-       ORDER BY mv.date DESC, mv.habit_id, mt.sort_order, mt.id
-       LIMIT ?`
-    )
-    .all(safeLimit * Math.max(1, getMeasurementTypes(false).length)) as {
-    habit_id: number;
-    habit_name: string;
-    date: string;
-    time: string;
-    type_id: number;
-    name: string;
-    unit: string;
-    value: number;
-  }[];
 
-  const entries = new Map<string, MeasurementHistoryEntry>();
-  for (const row of rows) {
-    const key = `${row.date}:${row.habit_id}`;
-    if (!entries.has(key)) {
-      entries.set(key, {
-        habitId: row.habit_id,
-        habitName: row.habit_name,
-        date: row.date,
-        time: row.time,
-        values: [],
-      });
-    }
-    entries.get(key)!.values.push({
-      typeId: row.type_id,
-      name: row.name,
-      unit: row.unit,
-      value: row.value,
-    });
-  }
-  return [...entries.values()].slice(0, safeLimit);
-}
+
 
 /** Geçmiş bir günü işaretle/kaldır. Elle eklenen kayda nötr saat (12:00) verilir. */
 export function toggleHabitOnDate(habitId: number, date: string, on: boolean, time = "12:00"): void {
@@ -638,10 +457,6 @@ export function toggleHabitOnDate(habitId: number, date: string, on: boolean, ti
     ).run(habitId, date, time);
   } else {
     const tx = d.transaction(() => {
-      d.prepare("DELETE FROM measurement_values WHERE habit_id = ? AND date = ?").run(
-        habitId,
-        date
-      );
       d.prepare("DELETE FROM logs WHERE habit_id = ? AND date = ?").run(habitId, date);
     });
     tx();
