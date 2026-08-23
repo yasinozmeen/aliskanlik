@@ -217,7 +217,7 @@ function NotifyEditor({
 }) {
   const [mode, setMode] = useState<"standard" | "custom" | "periodic" | "off">(habit.notify_mode);
   const [time, setTime] = useState(habit.notify_time ?? "");
-  const [interval, setInterval] = useState(String(habit.notify_interval ?? 3));
+  const [interval, setInterval] = useState(String(habit.notify_interval ?? 1));
 
   const intervalValid = /^\d+$/.test(interval) && Number(interval) >= 1;
   const timeValid = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time);
@@ -300,12 +300,18 @@ function NotifyEditor({
   );
 }
 
+import type { GlobalSettings } from "@/lib/logic";
+
 export default function Ayarlar({
   initial,
+  initialGlobal,
 }: {
   initial: Habit[];
+  initialGlobal: GlobalSettings;
 }) {
   const [habits, setHabits] = useState<Habit[]>(initial);
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings>(initialGlobal);
+  const [globalOpen, setGlobalOpen] = useState(false);
   const [yeni, setYeni] = useState("");
   const [busy, setBusy] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState<number | null>(null);
@@ -386,6 +392,51 @@ export default function Ayarlar({
         alışkanlık ekle, adını değiştir veya pasif yap. pasif alışkanlıklar
         dashboard&apos;da görünmez ama kayıtları saklanır.
       </p>
+
+      {/* Genel Ayarlar */}
+      <div className="mb-6 border-2 border-[var(--color-ink)] bg-[var(--color-cream-2)]">
+        <button
+          type="button"
+          onClick={() => setGlobalOpen(!globalOpen)}
+          className="press flex w-full items-center justify-between p-3 font-display font-bold text-lg focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop-deep)]"
+        >
+          <span>Genel Ayarlar (Sessiz Saatler)</span>
+          <span className="font-mono text-[var(--color-pop-deep)]">{globalOpen ? "▴" : "▾"}</span>
+        </button>
+        {globalOpen && (
+          <div className="border-t-2 border-dashed border-[var(--color-line)] p-3 bg-[var(--color-cream)] flex gap-4 flex-col md:flex-row">
+            <div className="flex flex-col gap-1">
+              <label className="label text-[0.62rem]">Sessiz Saatler (Başlangıç)</label>
+              <input
+                type="time"
+                value={globalSettings.dndStart}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  const newSet = { ...globalSettings, dndStart: val };
+                  setGlobalSettings(newSet);
+                  if (val) await act("setGlobalSettings", { settings: newSet });
+                }}
+                className="border-2 border-[var(--color-ink)] bg-white px-2 py-1.5 font-mono text-sm outline-none"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="label text-[0.62rem]">Sessiz Saatler (Bitiş)</label>
+              <input
+                type="time"
+                value={globalSettings.dndEnd}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  const newSet = { ...globalSettings, dndEnd: val };
+                  setGlobalSettings(newSet);
+                  if (val) await act("setGlobalSettings", { settings: newSet });
+                }}
+                className="border-2 border-[var(--color-ink)] bg-white px-2 py-1.5 font-mono text-sm outline-none"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
 
       {/* Yeni ekle */}
       <form onSubmit={ekle} className="brut-sm bg-[var(--color-cream)] p-3 mb-5 flex gap-2">

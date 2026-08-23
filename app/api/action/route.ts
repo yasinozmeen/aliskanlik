@@ -9,10 +9,11 @@ import {
   deleteHabit,
   setHabitSchedule,
   setHabitNotification,
+  setGlobalSettings,
   getState,
   InputError,
 } from "@/lib/logic";
-import type { ScheduleInput, NotifyInput } from "@/lib/logic";
+import type { ScheduleInput, NotifyInput, GlobalSettings } from "@/lib/logic";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,9 @@ export async function POST(req: NextRequest) {
         break;
       case "setNotification":
         setHabitNotification(Number(payload.habitId), payload.notify as NotifyInput);
+        break;
+      case "setGlobalSettings":
+        setGlobalSettings(payload.settings as GlobalSettings);
         break;
       default:
         return NextResponse.json({ ok: false, error: "unknown type" }, { status: 400 });

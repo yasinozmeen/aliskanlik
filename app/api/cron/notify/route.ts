@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getState, getHabits } from "@/lib/logic";
+import { getState, getHabits, getGlobalSettings } from "@/lib/logic";
 import { db } from "@/lib/db";
 import type { Habit } from "@/lib/logic";
 
@@ -34,11 +34,28 @@ export async function GET(req: Request) {
   
   const { date, timeStr, hours, minutes } = getIstanbulTime();
 
-  if ((hours === 23 && minutes >= 30) || hours >= 24) {
-    return NextResponse.json({ ok: true, sent: false, reason: "Sessiz saatler (DND)" });
+  const globalSettings = getGlobalSettings();
+  const dndStart = globalSettings.dndStart || "23:00";
+  const dndEnd = globalSettings.dndEnd || "06:00";
+  
+  const [startH, startM] = dndStart.split(':').map(Number);
+  const [endH, endM] = dndEnd.split(':').map(Number);
+  
+  const currentTotal = hours * 60 + minutes;
+  const startTotal = startH * 60 + startM;
+  const endTotal = endH * 60 + endM;
+  
+  let inDnd = false;
+  if (startTotal <= endTotal) {
+    // e.g. 09:00 to 17:00
+    if (currentTotal >= startTotal && currentTotal < endTotal) inDnd = true;
+  } else {
+    // e.g. 23:00 to 06:00 (crosses midnight)
+    if (currentTotal >= startTotal || currentTotal < endTotal) inDnd = true;
   }
-  if (hours < 8) {
-    return NextResponse.json({ ok: true, sent: false, reason: "Sessiz saatler (DND)" });
+  
+  if (inDnd) {
+    return NextResponse.json({ ok: true, sent: false, reason: `Sessiz saatler (${dndStart}-${dndEnd})` });
   }
 
   const incompleteState = state.habits.filter((h) => h.dueToday && !h.doneToday);

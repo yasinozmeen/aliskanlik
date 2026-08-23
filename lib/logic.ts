@@ -597,3 +597,30 @@ export function setHabitNotification(habitId: number, input: NotifyInput): void 
     `UPDATE habits SET notify_mode = ?, notify_time = ?, notify_interval = ? WHERE id = ?`
   ).run(mode, time, interval, habitId);
 }
+
+
+export type GlobalSettings = {
+  dndStart: string;
+  dndEnd: string;
+};
+
+export function getGlobalSettings(): GlobalSettings {
+  const d = db();
+  const rows = d.prepare("SELECT key, value FROM state WHERE key IN ('dnd_start', 'dnd_end')").all() as {key: string, value: string}[];
+  const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  
+  return {
+    dndStart: map['dnd_start'] || "23:00",
+    dndEnd: map['dnd_end'] || "06:00",
+  };
+}
+
+export function setGlobalSettings(settings: GlobalSettings) {
+  const d = db();
+  const stmt = d.prepare("INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)");
+  const run = d.transaction(() => {
+    stmt.run('dnd_start', settings.dndStart);
+    stmt.run('dnd_end', settings.dndEnd);
+  });
+  run();
+}
