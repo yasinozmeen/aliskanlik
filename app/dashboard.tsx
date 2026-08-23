@@ -888,15 +888,6 @@ export default function Dashboard({ initial }: { initial: AppState }) {
 
       {/* ————— GEÇMİŞ + AYARLAR ————— */}
       <Link
-        href="/olcumler"
-        className="press brut-sm bg-[var(--color-pop)] flex items-center justify-between px-4 py-3 mb-3"
-      >
-        <span className="font-display font-extrabold uppercase text-sm">
-          Ölçüm geçmişi
-        </span>
-        <span className="font-mono">→</span>
-      </Link>
-      <Link
         href="/gecmis"
         className="press brut-sm bg-[var(--color-ink)] text-[var(--color-cream)] flex items-center justify-between px-4 py-3 mb-3"
       >
