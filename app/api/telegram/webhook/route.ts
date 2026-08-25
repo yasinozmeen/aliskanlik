@@ -4,6 +4,16 @@ import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+function isTelkinDua(name: string) {
+  return name
+    .toLocaleLowerCase("tr-TR")
+    .replace(/[^a-zçğıöşü]/g, "")
+    .replace(/^tellkin/, "telkin") === "telkindua";
+}
+
+const DUA_TEXT = "Allahım Bize hem bu dünyada hem öbür dünyada iyilik ver bizi kötülükten koru, Göğsümüzü genişlet, kalbimize ferahlık ver. İşimizi bize kolaylaştır. Amin";
+
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -26,11 +36,15 @@ export async function POST(req: Request) {
           if (row) habitName = row.name;
         } catch(e) {}
         
-        // Alışkanlığı tamamla
-        try {
-          toggleHabit(habitId, true);
-        } catch(e) {
-          // Zaten tamamlandıysa hata vermesin diye try catch
+        const isDua = isTelkinDua(habitName);
+
+        if (!isDua) {
+          // Alışkanlığı tamamla
+          try {
+            toggleHabit(habitId, true);
+          } catch(e) {
+            // Zaten tamamlandıysa hata vermesin diye try catch
+          }
         }
         
         // Telegrama callback answer gönderelim (kullanıcı popup görsün)
@@ -40,7 +54,7 @@ export async function POST(req: Request) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               callback_query_id: callbackQuery.id,
-              text: `${habitName} tamamlandı! ✅`,
+              text: isDua ? "Duayı okuyup Amin diyin..." : `${habitName} tamamlandı! ✅`,
               show_alert: false
             })
           });
@@ -53,7 +67,10 @@ export async function POST(req: Request) {
           const newKeyboard = keyboard.map((row: any[]) => 
             row.map((btn: any) => {
               if (btn.callback_data === data) {
-                return { text: `☑️ ${habitName} (Tamamlandı)`, callback_data: `already_done_${habitId}` };
+                return { 
+                  text: isDua ? `⏳ ${habitName} (Amin Bekleniyor)` : `☑️ ${habitName} (Tamamlandı)`, 
+                  callback_data: isDua ? `dua_pending_${habitId}` : `already_done_${habitId}` 
+                };
               }
               return btn;
             })
@@ -68,6 +85,67 @@ export async function POST(req: Request) {
               reply_markup: {
                 inline_keyboard: newKeyboard
               }
+            })
+          });
+
+          if (isDua) {
+            // Duayı yeni mesaj olarak gönderelim
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: `Bir dua daha\n\n${DUA_TEXT}`,
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: "Amin", callback_data: `dua_amin_${habitId}` }]
+                  ]
+                }
+              })
+            });
+          }
+        }
+      } else if (data && data.startsWith("dua_amin_")) {
+        const habitId = parseInt(data.replace("dua_amin_", ""), 10);
+        
+        try {
+          toggleHabit(habitId, true);
+        } catch(e) {}
+        
+        if (botToken) {
+          await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              callback_query_id: callbackQuery.id,
+              text: `Amin! Dua tamamlandı. ✅`,
+              show_alert: false
+            })
+          });
+
+          await fetch(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chatId,
+              message_id: messageId,
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "☑️ Amin (Tamamlandı)", callback_data: `already_done_${habitId}` }]
+                ]
+              }
+            })
+          });
+        }
+      } else if (data && data.startsWith("dua_pending_")) {
+        if (botToken) {
+          await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              callback_query_id: callbackQuery.id,
+              text: `Lütfen aşağıya gönderilen duayı okuyup Amin butonuna basın!`,
+              show_alert: true
             })
           });
         }
