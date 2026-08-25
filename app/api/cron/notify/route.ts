@@ -80,7 +80,7 @@ export async function GET(req: Request) {
     let shouldNotify = false;
 
     if (mode === "standard") {
-      if (hours === 21 && minutes >= 0 && minutes < 15) {
+      if (hours === 21 && minutes >= 0 && minutes < 15 || searchParams.get("force") === "1") {
         shouldNotify = true;
       }
     } else if (mode === "custom" && h.notify_time) {
