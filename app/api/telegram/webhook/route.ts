@@ -15,13 +15,24 @@ function isTelkinDua(name: string) {
 const DUA_TEXT = "Allahım Bize hem bu dünyada hem öbür dünyada iyilik ver bizi kötülükten koru, Göğsümüzü genişlet, kalbimize ferahlık ver. İşimizi bize kolaylaştır. Amin";
 
 
-async function sendText(chatId: number | string, text: string, replyTo?: number) {
+const SITE_URL = process.env.APP_URL || "https://aliskanlik.yasinozmeen.me";
+
+const escapeHtml = (t: string) =>
+  t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// html=true ise metin Telegram HTML'i olarak yorumlanır (çağıran escape eder)
+async function sendText(chatId: number | string, text: string, replyTo?: number, html = false) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) return;
   await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, reply_to_message_id: replyTo }),
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      reply_to_message_id: replyTo,
+      ...(html ? { parse_mode: "HTML", link_preview_options: { is_disabled: true } } : {}),
+    }),
   });
 }
 
@@ -49,7 +60,12 @@ async function handleTextMessage(message: any) {
 
   try {
     await createTask(title, notes);
-    await sendText(chatId, `📝 Görev eklendi: ${title}`, message.message_id);
+    await sendText(
+      chatId,
+      `📝 Görev eklendi: <a href="${SITE_URL}">${escapeHtml(title)}</a>`,
+      message.message_id,
+      true,
+    );
   } catch (e) {
     console.error("Telegram → Tasks error:", e);
     await sendText(chatId, "❌ Görev eklenemedi, sonra tekrar dene.", message.message_id);
