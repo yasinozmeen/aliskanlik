@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { toggleHabit } from "@/lib/logic";
 import { db } from "@/lib/db";
+import { createTask, gtasksConfigured } from "@/lib/gtasks";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +15,63 @@ function isTelkinDua(name: string) {
 const DUA_TEXT = "Allahım Bize hem bu dünyada hem öbür dünyada iyilik ver bizi kötülükten koru, Göğsümüzü genişlet, kalbimize ferahlık ver. İşimizi bize kolaylaştır. Amin";
 
 
+async function sendText(chatId: number | string, text: string, replyTo?: number) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) return;
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text, reply_to_message_id: replyTo }),
+  });
+}
+
+/* Bota yazılan düz metin → Google Tasks'ta yeni görev.
+   Yalnız TELEGRAM_CHAT_ID'den gelen mesaj kabul edilir (bot herkese açık,
+   yabancı biri listeye görev yazamasın). İlk satır başlık, kalanı not.
+   Sayaç artmaz — /api/tasks'taki "ekleme" ile aynı kural. */
+async function handleTextMessage(message: any) {
+  const ownerChat = process.env.TELEGRAM_CHAT_ID;
+  const chatId = message.chat?.id;
+  if (!ownerChat || String(chatId) !== String(ownerChat)) return;
+
+  const text = String(message.text || "").trim();
+  if (!text || text.startsWith("/")) return; // /start vb. komutlar görev değil
+
+  if (!gtasksConfigured()) {
+    await sendText(chatId, "⚠️ Google Tasks bağlı değil, görev eklenemedi.", message.message_id);
+    return;
+  }
+
+  // text trim'li olduğundan ilk satır boş olamaz
+  const [first, ...rest] = text.split("\n");
+  const title = first.trim().slice(0, 1024);
+  const notes = rest.join("\n").trim().slice(0, 8000) || undefined;
+
+  try {
+    await createTask(title, notes);
+    await sendText(chatId, `📝 Görev eklendi: ${title}`, message.message_id);
+  } catch (e) {
+    console.error("Telegram → Tasks error:", e);
+    await sendText(chatId, "❌ Görev eklenemedi, sonra tekrar dene.", message.message_id);
+  }
+}
+
+// Telegram yanıt gecikirse aynı update'i tekrar yollar → aynı görev iki kez eklenmesin.
+const seenUpdates = new Set<number>();
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+
+    if (body.message?.text) {
+      if (typeof body.update_id === "number") {
+        if (seenUpdates.has(body.update_id)) return NextResponse.json({ ok: true });
+        seenUpdates.add(body.update_id);
+        if (seenUpdates.size > 200) seenUpdates.delete(seenUpdates.values().next().value!);
+      }
+      await handleTextMessage(body.message);
+      return NextResponse.json({ ok: true });
+    }
     
     // Yalnızca callback query leri isle
     if (body.callback_query) {
@@ -168,6 +223,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("Telegram Webhook Error:", e);
-    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
+    // 200 dönülür: 500'de Telegram aynı update'i defalarca yeniden yollar
+    return NextResponse.json({ ok: false });
   }
 }
