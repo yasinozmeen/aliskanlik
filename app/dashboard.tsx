@@ -6,7 +6,7 @@ import type { AppState, HabitState, HeatCell } from "@/lib/logic";
 
 type GTask = { id: string; title: string };
 const DUA_TEXT =
-  "Allahım Bize hem bu dünyada hem öbür dünyada iyilik ver bizi kötülükten koru, Göğsümüzü genişlet, kalbimize ferahlık ver. İşimizi bize kolaylaştır. Amin";
+  "Allahım, bize hem bu dünyada hem öbür dünyada iyilik verdiğin, bizi kötülükten koruduğun için Sana şükürler olsun. Göğsümüzü genişlettin, kalbimize ferahlık verdin, işimizi bize kolaylaştırdın. Verdiğin her nimet için Sana hamd olsun. Amin";
 
 function isTelkinDua(name: string) {
   return name
