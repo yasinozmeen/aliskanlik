@@ -3,17 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import type { AppState, HabitState, HeatCell } from "@/lib/logic";
+import { DUA_TEXT, isTelkinDua } from "@/lib/dua";
 
 type GTask = { id: string; title: string };
-const DUA_TEXT =
-  "Allahım, bize hem bu dünyada hem öbür dünyada iyilik verdiğin, bizi kötülükten koruduğun için Sana şükürler olsun. Göğsümüzü genişlettin, kalbimize ferahlık verdin, işimizi bize kolaylaştırdın. Verdiğin her nimet için Sana hamd olsun. Amin";
-
-function isTelkinDua(name: string) {
-  return name
-    .toLocaleLowerCase("tr-TR")
-    .replace(/[^a-zçğıöşü]/g, "")
-    .replace(/^tellkin/, "telkin") === "telkindua";
-}
 
 /* ————————————————————————— Yardımcılar ————————————————————————— */
 

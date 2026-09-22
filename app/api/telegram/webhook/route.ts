@@ -2,18 +2,9 @@ import { NextResponse } from "next/server";
 import { toggleHabit } from "@/lib/logic";
 import { db } from "@/lib/db";
 import { createTask, gtasksConfigured } from "@/lib/gtasks";
+import { DUA_TEXT, isTelkinDua } from "@/lib/dua";
 
 export const dynamic = "force-dynamic";
-
-function isTelkinDua(name: string) {
-  return name
-    .toLocaleLowerCase("tr-TR")
-    .replace(/[^a-zçğıöşü]/g, "")
-    .replace(/^tellkin/, "telkin") === "telkindua";
-}
-
-const DUA_TEXT = "Allahım Bize hem bu dünyada hem öbür dünyada iyilik ver bizi kötülükten koru, Göğsümüzü genişlet, kalbimize ferahlık ver. İşimizi bize kolaylaştır. Amin";
-
 
 const SITE_URL = process.env.APP_URL || "https://aliskanlik.yasinozmeen.me";
 
