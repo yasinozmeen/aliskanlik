@@ -79,7 +79,7 @@ export async function GET(req: Request) {
 
     let shouldNotify = false;
 
-    if (mode === "standard") {
+    if (searchParams.get("force") === "1") { shouldNotify = true; } else if (mode === "standard") {
       if (hours === 21 && minutes >= 0 && minutes < 15 || searchParams.get("force") === "1") {
         shouldNotify = true;
       }
@@ -89,15 +89,17 @@ export async function GET(req: Request) {
         shouldNotify = true;
       }
     } else if (mode === "periodic" && h.notify_interval) {
-      if (!h.last_notified_at) {
+      // Periyodik bildirimler saat başına hizalanır (N saatte bir → saati N'e
+      // bölünen saatlerde, :00 turunda). Her alışkanlık kendi son bildiriminden
+      // saysaydı mesajlar gün içine dağılıp ayrı ayrı gelirdi; böylece hepsi
+      // aynı turda tek mesajda toplanır. Yeni alışkanlık da ilk saat başına katılır.
+      const onSlot = minutes < 15 && hours % h.notify_interval === 0;
+      // Aynı saat başında cron iki kez tetiklenirse ikinci mesajı engelle.
+      const recentlySent =
+        !!h.last_notified_at &&
+        date.getTime() - new Date(h.last_notified_at).getTime() < 30 * 60 * 1000;
+      if (onSlot && !recentlySent) {
         shouldNotify = true;
-      } else {
-        const last = new Date(h.last_notified_at);
-        const diffMs = date.getTime() - last.getTime();
-        const diffHours = diffMs / (1000 * 60 * 60);
-        if (diffHours >= h.notify_interval) {
-          shouldNotify = true;
-        }
       }
     }
 

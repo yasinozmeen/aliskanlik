@@ -366,7 +366,7 @@ export function addHabit(name: string): void {
   const max = (d.prepare("SELECT MAX(sort_order) AS m FROM habits").get() as { m: number | null }).m ?? -1;
   // Yeni alışkanlık saatte bir bildirimle başlar: 'standard' (yalnız 21:00)
   // varsayılanı, akşama kadar Telegram'dan hiç hatırlatma gelmemesine yol açıyordu.
-  // last_notified_at boş olduğundan ilk cron turunda (≤15 dk) bildirim gider.
+  // İlk saat başında diğer periyodik bildirimlerle aynı mesaja katılır.
   d.prepare(
     "INSERT INTO habits (name, active, sort_order, notify_mode, notify_interval) VALUES (?, 1, ?, 'periodic', 1)"
   ).run(name.trim(), max + 1);
