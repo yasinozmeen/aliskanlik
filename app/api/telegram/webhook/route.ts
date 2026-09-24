@@ -5,6 +5,7 @@ import { createTask, completeTask, gtasksConfigured } from "@/lib/gtasks";
 import { bumpTaskCount } from "@/lib/logic";
 import { DUA_TEXT, isTelkinDua } from "@/lib/dua";
 import { buildTasksMessage, TASK_CB_PREFIX, TASKS_LIST_CB } from "@/lib/telegram-tasks";
+import { runNotify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -50,19 +51,12 @@ async function sendTasksList(chatId: number | string) {
   }
 }
 
-/* /bugun → bugün kalan alışkanlıklar. Cron'un force modu zaten bu mesajı
-   üretiyor; aynı kodu iki yerde tutmamak için içeriden çağrılır. */
+/* /bugun → bugün kalan alışkanlıklar (cron'un force modu, doğrudan çağrı). */
 async function sendTodayHabits(chatId: number | string) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    await sendText(chatId, "⚠️ CRON_SECRET tanımlı değil.");
-    return;
-  }
-  const port = process.env.PORT || "3000";
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/cron/notify?token=${encodeURIComponent(secret)}&force=1`);
-    const j = (await res.json()) as { sent?: boolean; reason?: string };
-    if (!j.sent) await sendText(chatId, `✅ ${j.reason || "Bugün kalan alışkanlık yok."}`);
+    const r = await runNotify(true);
+    if (!r.ok) throw new Error(r.error || "notify failed");
+    if (!r.sent) await sendText(chatId, `✅ ${r.reason || "Bugün kalan alışkanlık yok."}`);
   } catch (e) {
     console.error("Telegram /bugun error:", e);
     await sendText(chatId, "❌ Liste alınamadı, sonra tekrar dene.");
