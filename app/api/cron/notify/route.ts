@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getState, getHabits, getGlobalSettings } from "@/lib/logic";
 import { db } from "@/lib/db";
 import type { Habit } from "@/lib/logic";
+import { buildTasksDigest } from "@/lib/telegram-tasks";
 
 export const dynamic = "force-dynamic";
 
@@ -58,8 +59,45 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, sent: false, reason: `Sessiz saatler (${dndStart}-${dndEnd})` });
   }
 
+  const force = searchParams.get("force") === "1";
+  const database = db();
+
+  // Akşam özeti: 21:00 turunda Google Tasks'taki açık görev sayısı + "Listeyi göster"
+  // butonu. Günde bir kez (state tablosunda tarih tutulur); force'ta eklenmez.
+  const todayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const eveningSlot = !force && hours === 21 && minutes < 15;
+  let digest: Awaited<ReturnType<typeof buildTasksDigest>> = null;
+  if (eveningSlot) {
+    const sentOn = (database.prepare("SELECT value FROM state WHERE key = 'tasks_digest_date'").get() as { value: string } | undefined)?.value;
+    if (sentOn !== todayKey) {
+      try { digest = await buildTasksDigest(); } catch (e) { console.error("tasks digest error:", e); }
+    }
+  }
+  const markDigestSent = () =>
+    database.prepare("INSERT OR REPLACE INTO state (key, value) VALUES ('tasks_digest_date', ?)").run(todayKey);
+  // Alışkanlık hatırlatması yoksa özet tek başına gider.
+  const sendDigestOnly = async () => {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: digest!.text, reply_markup: digest!.reply_markup }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        console.error("tasks digest send failed:", err);
+        return NextResponse.json({ ok: false, error: err }, { status: 500 });
+      }
+      markDigestSent();
+      return NextResponse.json({ ok: true, sent: true, digestOnly: true });
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
+    }
+  };
+
   const incompleteState = state.habits.filter((h) => h.dueToday && !h.doneToday);
   if (incompleteState.length === 0) {
+    if (digest) return sendDigestOnly();
     return NextResponse.json({ ok: true, sent: false, reason: "Bütün görevler tamam." });
   }
 
@@ -71,7 +109,6 @@ export async function GET(req: Request) {
   }
 
   const toNotify: Habit[] = [];
-  const database = db();
 
   for (const h of incomplete) {
     const mode = h.notify_mode || "standard";
@@ -79,8 +116,8 @@ export async function GET(req: Request) {
 
     let shouldNotify = false;
 
-    if (searchParams.get("force") === "1") { shouldNotify = true; } else if (mode === "standard") {
-      if (hours === 21 && minutes >= 0 && minutes < 15 || searchParams.get("force") === "1") {
+    if (force) { shouldNotify = true; } else if (mode === "standard") {
+      if (hours === 21 && minutes >= 0 && minutes < 15) {
         shouldNotify = true;
       }
     } else if (mode === "custom" && h.notify_time) {
@@ -109,14 +146,17 @@ export async function GET(req: Request) {
   }
 
   if (toNotify.length === 0) {
+    if (digest) return sendDigestOnly();
     return NextResponse.json({ ok: true, sent: false, reason: "Bu periyotta bildirilecek görev yok." });
   }
 
-  const text = `🔔 *Hatırlatma Zamanı!*\n\nAşağıdaki görevleri tamamladın mı?`;
+  let text = `🔔 *Hatırlatma Zamanı!*\n\nAşağıdaki görevleri tamamladın mı?`;
+  if (digest) text += `\n\n${digest.text}`;
 
   const inline_keyboard = toNotify.map((h) => [
     { text: `✅ ${h.name}`, callback_data: `done_${h.id}` }
   ]);
+  if (digest?.reply_markup) inline_keyboard.push(...digest.reply_markup.inline_keyboard);
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -138,11 +178,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: err }, { status: 500 });
     }
 
-    const nowIso = date.toISOString();
-    const stmt = database.prepare("UPDATE habits SET last_notified_at = ? WHERE id = ?");
-    for (const h of toNotify) {
-      stmt.run(nowIso, h.id);
+    // force (elle /bugun) planlı bildirimlerin zamanlamasını etkilemesin
+    if (!force) {
+      const nowIso = date.toISOString();
+      const stmt = database.prepare("UPDATE habits SET last_notified_at = ? WHERE id = ?");
+      for (const h of toNotify) {
+        stmt.run(nowIso, h.id);
+      }
     }
+    if (digest) markDigestSent();
 
     return NextResponse.json({ ok: true, sent: true, count: toNotify.length });
   } catch (e) {
