@@ -10,6 +10,7 @@ export const TASK_CB_PREFIX = "task_";
 export const TASKS_LIST_CB = "tasks_list";
 const MAX_BUTTONS = 30; // Telegram inline keyboard üst sınırı 100; okunabilirlik için 30
 const CB_LIMIT = 64;
+const BUTTONS_PER_ROW = 5;
 
 type InlineButton = { text: string; callback_data: string };
 
@@ -21,8 +22,6 @@ export type TasksMessage = {
 export const escapeHtml = (t: string) =>
   t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const clip = (t: string, n: number) => (t.length > n ? t.slice(0, n - 1) + "…" : t);
-
 export async function buildTasksMessage(siteUrl: string): Promise<TasksMessage> {
   if (!gtasksConfigured()) {
     return { text: "⚠️ Google Tasks bağlı değil." };
@@ -32,23 +31,27 @@ export async function buildTasksMessage(siteUrl: string): Promise<TasksMessage> 
     return { text: "📋 Google'da açık görev yok. 🎉" };
   }
 
-  const buttons: InlineButton[][] = [];
-  const overflow: string[] = [];
-  for (const t of tasks) {
+  // Metin tam haliyle numaralı listede; butonlar yalnız numara taşır
+  // (Telegram buton yazısını genişliğe göre kırpıyor, uzun başlık okunmuyordu).
+  const lines: string[] = [];
+  const flat: InlineButton[] = [];
+  const noButton: number[] = [];
+  tasks.forEach((t, i) => {
+    const n = i + 1;
+    lines.push(`${n}. ${escapeHtml(t.title)}`);
     const cb = TASK_CB_PREFIX + t.id;
-    if (buttons.length < MAX_BUTTONS && Buffer.byteLength(cb) <= CB_LIMIT) {
-      buttons.push([{ text: `✅ ${clip(t.title, 40)}`, callback_data: cb }]);
+    if (flat.length < MAX_BUTTONS && Buffer.byteLength(cb) <= CB_LIMIT) {
+      flat.push({ text: `✅ ${n}`, callback_data: cb });
     } else {
-      overflow.push(t.title);
+      noButton.push(n);
     }
-  }
+  });
+  const buttons: InlineButton[][] = [];
+  for (let i = 0; i < flat.length; i += BUTTONS_PER_ROW) buttons.push(flat.slice(i, i + BUTTONS_PER_ROW));
 
-  let text = `📋 <b>Açık görevler (${tasks.length})</b>\nButona basınca Google'da kapanır.`;
-  if (overflow.length) {
-    text +=
-      `\n\nButonsuz (${overflow.length}):\n` +
-      overflow.map((t) => `• ${escapeHtml(clip(t, 60))}`).join("\n") +
-      `\n<a href="${siteUrl}">Sitede aç</a>`;
+  let text = `📋 <b>Açık görevler (${tasks.length})</b>\n\n${lines.join("\n")}\n\nNumaraya basınca Google'da kapanır.`;
+  if (noButton.length) {
+    text += `\n(${noButton.join(", ")} yalnız <a href="${siteUrl}">siteden</a> kapatılabilir.)`;
   }
   return buttons.length ? { text, reply_markup: { inline_keyboard: buttons } } : { text };
 }

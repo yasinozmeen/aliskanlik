@@ -169,14 +169,19 @@ export async function POST(req: Request) {
           } finally {
             completingTasks.delete(taskId);
           }
+          const keyboardNow = callbackQuery.message?.reply_markup?.inline_keyboard || [];
+          const btnLabel = String(
+            keyboardNow.flat().find((b: any) => b.callback_data === data)?.text || "",
+          ).replace(/^✅ /, "");
+          const lineMatch = String(callbackQuery.message?.text || "").match(new RegExp(`^${btnLabel}\\. (.+)$`, "m"));
+          const doneTitle = lineMatch?.[1] || btnLabel;
           await tg("answerCallbackQuery", {
             callback_query_id: callbackQuery.id,
-            text: ok ? "Görev tamamlandı! ✅" : "Kapatılamadı, tekrar dene.",
+            text: ok ? `Tamamlandı ✅ ${doneTitle}`.slice(0, 200) : "Kapatılamadı, tekrar dene.",
             show_alert: !ok,
           });
           if (ok) {
-            const keyboard = callbackQuery.message.reply_markup?.inline_keyboard || [];
-            const newKeyboard = keyboard.map((row: any[]) =>
+            const newKeyboard = keyboardNow.map((row: any[]) =>
               row.map((btn: any) =>
                 btn.callback_data === data
                   ? { text: `☑️ ${String(btn.text).replace(/^✅ /, "")}`, callback_data: `tdone_${taskId}`.slice(0, 64) }
