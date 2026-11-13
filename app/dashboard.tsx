@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import type { AppState, HabitState, HeatCell } from "@/lib/logic";
 import { DUA_TEXT, isTelkinDua } from "@/lib/dua";
 
-type GTask = { id: string; title: string };
+type GTask = { id: string; title: string; notes?: string };
 
 /* ————————————————————————— Yardımcılar ————————————————————————— */
 
@@ -58,9 +58,21 @@ function splitTaskTitle(title: string): TaskTitlePart[] {
   return parts.length ? parts : [{ type: "text", value: title }];
 }
 
-function TaskTitle({ title }: { title: string }) {
+// Rozet metni: tek satırlık notta "not", uzun notta satır sayısı da görünür.
+function noteBadge(notes: string): string {
+  const lines = notes.split("\n").filter((l) => l.trim() !== "").length;
+  return lines > 1 ? `not · ${lines} satır` : "not";
+}
+
+function TaskTitle({
+  title,
+  className = "font-body text-[0.9rem] leading-snug break-words",
+}: {
+  title: string;
+  className?: string;
+}) {
   return (
-    <span className="font-body text-[0.9rem] leading-snug break-words">
+    <span className={className}>
       {splitTaskTitle(title).map((part, index) =>
         part.type === "link" ? (
           <a
@@ -414,6 +426,17 @@ export default function Dashboard({ initial }: { initial: AppState }) {
   const [editTitle, setEditTitle] = useState("");
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState("");
+  const [newNotes, setNewNotes] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [editNotes, setEditNotes] = useState("");
+  // Düzenleme açıldığında görülen açıklama. Kaydederken açıklama yalnız bundan farklıysa
+  // gönderilir: tarayıcı önbelleğinden gelen eski (notsuz) kayıtla Google'daki notu silmeyelim.
+  const [editNotesOrig, setEditNotesOrig] = useState("");
+  const noteTimer = useRef<number | null>(null);
+  const noteOpener = useRef<HTMLElement | null>(null);
+  // Açıklama sayfası: hangi görevin notu açık + kapanış animasyonu sürüyor mu
+  const [noteTaskId, setNoteTaskId] = useState<string | null>(null);
+  const [noteClosing, setNoteClosing] = useState(false);
   const [duaOpen, setDuaOpen] = useState(false);
 
   const loadTasks = useCallback(async () => {
@@ -504,12 +527,12 @@ export default function Dashboard({ initial }: { initial: AppState }) {
       const r = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, notes: newNotes }),
       });
       const j = await r.json();
       if (j.ok) {
         setTasks(j.tasks || []);
-        setNewTitle("");
+        resetAddForm();
         setAdding(false);
       }
     } finally {
@@ -517,21 +540,73 @@ export default function Dashboard({ initial }: { initial: AppState }) {
     }
   }
 
+  function resetAddForm() {
+    setNewTitle("");
+    setNewNotes("");
+    setNotesOpen(false);
+  }
+
   function startEditingTask(task: GTask) {
     setAdding(false);
-    setNewTitle("");
+    resetAddForm();
     setEditingTaskId(task.id);
     setEditTitle(task.title);
+    setEditNotes(task.notes || "");
+    setEditNotesOrig(task.notes || "");
     setEditError("");
   }
 
   function cancelEditingTask() {
     setEditingTaskId(null);
     setEditTitle("");
+    setEditNotes("");
     setEditError("");
   }
 
-  async function saveTaskTitle(taskId: string) {
+  function openNote(taskId: string, opener?: HTMLElement) {
+    // Kapanmakta olan sayfanın zamanlayıcısı yeni açılanı kapatmasın.
+    if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
+    noteTimer.current = null;
+    noteOpener.current = opener || null;
+    setNoteClosing(false);
+    setNoteTaskId(taskId);
+  }
+
+  // Kapanış animasyonu bitince sayfayı kaldır (süre globals.css'teki .sheet-out ile aynı),
+  // odağı sayfayı açan rozete geri ver.
+  const closeNote = useCallback(() => {
+    setNoteClosing(true);
+    if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
+    noteTimer.current = window.setTimeout(() => {
+      noteTimer.current = null;
+      setNoteTaskId(null);
+      setNoteClosing(false);
+      noteOpener.current?.focus({ preventScroll: true });
+      noteOpener.current = null;
+    }, 200);
+  }, []);
+
+  // Sayfa gerçekten ekrandaysa true. Görev listeden düşerse (başka yerden kapatıldı) ya da
+  // notu silinirse false olur; kaydırma kilidi buna bağlı olduğu için takılı kalmaz.
+  const noteTask = noteTaskId ? tasks.find((t) => t.id === noteTaskId) : undefined;
+  const noteShown = !!noteTask?.notes;
+
+  // Açıklama sayfası açıkken: Esc kapatır, arkadaki sayfa kaymaz.
+  useEffect(() => {
+    if (!noteShown) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeNote();
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [noteShown, closeNote]);
+
+  async function saveTask(taskId: string) {
     const title = editTitle.trim();
     if (!title || editBusy) return;
     setEditBusy(true);
@@ -540,7 +615,11 @@ export default function Dashboard({ initial }: { initial: AppState }) {
       const r = await fetch("/api/tasks", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId, title }),
+        body: JSON.stringify(
+          editNotes.trim() === editNotesOrig.trim()
+            ? { taskId, title }
+            : { taskId, title, notes: editNotes }
+        ),
       });
       const j = await r.json();
       if (!r.ok || !j.ok) {
@@ -550,6 +629,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
       setTasks(j.tasks || []);
       setEditingTaskId(null);
       setEditTitle("");
+      setEditNotes("");
     } catch {
       setEditError("Bağlantı kurulamadı. Değişiklik kaydedilmedi.");
     } finally {
@@ -588,6 +668,73 @@ export default function Dashboard({ initial }: { initial: AppState }) {
             >
               Amin
             </button>
+          </div>
+        </div>
+      )}
+
+      {noteTask && noteTask.notes && (
+        <div
+          className={`fixed inset-0 z-50 flex items-end justify-center bg-[var(--color-ink)]/55 ${
+            noteClosing ? "dim-out" : "dim-in"
+          }`}
+          onClick={closeNote}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="not-baslik"
+            onClick={(e) => e.stopPropagation()}
+            className={`flex max-h-[86dvh] w-full max-w-xl flex-col border-x-[3px] border-t-[3px] border-[var(--color-ink)] bg-[var(--color-cream)] ${
+              noteClosing ? "sheet-out" : "sheet-in"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3 border-b-[3px] border-[var(--color-ink)] bg-[var(--color-pop)] px-3 py-2.5">
+              <h2
+                id="not-baslik"
+                className="min-w-0 break-words font-display text-[1.15rem] font-black uppercase leading-tight"
+              >
+                {noteTask.title}
+              </h2>
+              <button
+                type="button"
+                autoFocus
+                onClick={closeNote}
+                aria-label="Açıklamayı kapat"
+                className="press grid h-11 w-11 shrink-0 place-items-center border-2 border-[var(--color-ink)] bg-[var(--color-cream)] font-display text-xl font-black leading-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)]"
+              >
+                ×
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+              <TaskTitle
+                title={noteTask.notes}
+                className="block font-body text-[0.95rem] leading-relaxed break-words"
+              />
+            </div>
+            <div className="grid grid-cols-2 border-t-2 border-[var(--color-ink)] pb-[env(safe-area-inset-bottom)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setNoteTaskId(null);
+                  startEditingTask(noteTask);
+                }}
+                disabled={taskBusy !== null || editBusy}
+                className="label min-h-12 px-3 text-[0.66rem] font-bold active:bg-[var(--color-cream-2)] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop)]"
+              >
+                düzenle
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNoteTaskId(null);
+                  completeTask(noteTask.id);
+                }}
+                disabled={taskBusy !== null || editBusy}
+                className="label min-h-12 border-l-2 border-[var(--color-ink)] bg-[var(--color-green)] px-3 text-[0.66rem] font-bold text-[var(--color-cream)] active:bg-[var(--color-green-deep)] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-ink)]"
+              >
+                tamamla ✓
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -712,7 +859,7 @@ export default function Dashboard({ initial }: { initial: AppState }) {
               e.preventDefault();
               addTask();
             }}
-            className="drop brut-sm bg-[var(--color-cream)] px-3 py-2.5 mb-3 flex items-center gap-2"
+            className="drop brut-sm bg-[var(--color-cream)] px-3 py-2.5 mb-3 flex flex-col"
           >
             <textarea
               autoFocus
@@ -727,22 +874,71 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                   e.preventDefault();
                   addTask();
                 } else if (e.key === "Escape") {
-                  setNewTitle("");
+                  resetAddForm();
                   setAdding(false);
                 }
               }}
               disabled={addBusy}
               placeholder="görev yaz, enter'a bas…"
+              aria-label="Görev başlığı"
               rows={1}
-              className="flex-1 min-w-0 bg-transparent outline-none font-body text-[0.9rem] placeholder:text-[var(--color-muted)] resize-none overflow-hidden pt-1"
+              className="w-full min-w-0 bg-transparent outline-none font-body text-[0.9rem] placeholder:text-[var(--color-muted)] resize-none overflow-hidden pt-1"
             />
-            <button
-              type="submit"
-              disabled={!newTitle.trim() || addBusy}
-              className="press label text-[0.6rem] bg-[var(--color-ink)] text-[var(--color-cream)] px-2.5 py-1.5 shrink-0 disabled:opacity-40"
-            >
-              {addBusy ? "…" : "ekle"}
-            </button>
+            <div className={`fold ${notesOpen ? "fold-open" : ""}`}>
+              <div>
+                <textarea
+                  id="new-task-notes"
+                  value={newNotes}
+                  onChange={(e) => setNewNotes(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      addTask();
+                    } else if (e.key === "Escape") {
+                      resetAddForm();
+                      setAdding(false);
+                    }
+                  }}
+                  disabled={addBusy}
+                  tabIndex={notesOpen ? 0 : -1}
+                  aria-hidden={!notesOpen}
+                  aria-label="Görev açıklaması"
+                  maxLength={8192}
+                  placeholder="açıklama (isteğe bağlı)…"
+                  rows={3}
+                  className="mt-2 block w-full border-2 border-[var(--color-ink)] bg-[var(--color-cream-2)] px-2.5 py-2 font-body text-[0.9rem] placeholder:text-[var(--color-muted)] resize-none outline-none focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--color-pop)]"
+                />
+              </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                aria-expanded={notesOpen}
+                aria-controls="new-task-notes"
+                onClick={() => {
+                  const next = !notesOpen;
+                  setNotesOpen(next);
+                  if (next) {
+                    document.getElementById("new-task-notes")?.focus({ preventScroll: true });
+                  } else {
+                    setNewNotes("");
+                  }
+                }}
+                disabled={addBusy}
+                className={`press label text-[0.6rem] border-2 border-[var(--color-ink)] px-2.5 py-1.5 transition-colors disabled:opacity-40 ${
+                  notesOpen ? "bg-[var(--color-pop-pale)]" : "bg-[var(--color-cream)]"
+                }`}
+              >
+                {notesOpen ? "− açıklama" : "+ açıklama"}
+              </button>
+              <button
+                type="submit"
+                disabled={!newTitle.trim() || addBusy}
+                className="press label text-[0.6rem] bg-[var(--color-ink)] text-[var(--color-cream)] px-2.5 py-1.5 shrink-0 disabled:opacity-40"
+              >
+                {addBusy ? "…" : "ekle"}
+              </button>
+            </div>
           </form>
         )}
 
@@ -757,14 +953,14 @@ export default function Dashboard({ initial }: { initial: AppState }) {
             tüm görevler tamam ✓
           </p>
         ) : (
-          <div className="flex flex-col gap-2 max-h-[70vh] overflow-y-auto pr-1 pb-1">
+          <div className="flex flex-col gap-2 max-h-[70vh] overflow-y-auto pr-1 pb-1 *:shrink-0">
             {tasks.map((task) =>
               editingTaskId === task.id ? (
                 <form
                   key={task.id}
                   onSubmit={(e) => {
                     e.preventDefault();
-                    saveTaskTitle(task.id);
+                    saveTask(task.id);
                   }}
                   className="drop brut-sm bg-[var(--color-cream)] p-2.5"
                 >
@@ -787,13 +983,36 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                       if (e.key === "Escape") cancelEditingTask();
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        saveTaskTitle(task.id);
+                        saveTask(task.id);
                       }
                     }}
                     disabled={editBusy}
                     maxLength={500}
                     rows={1}
                     className="mt-1.5 min-h-11 w-full border-2 border-[var(--color-ink)] bg-[var(--color-cream-2)] px-2.5 py-2.5 font-body text-base outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-pop)] focus-visible:ring-offset-2 resize-none overflow-hidden"
+                  />
+                  <label
+                    htmlFor={`task-notes-${task.id}`}
+                    className="label mt-2.5 block text-[0.58rem] font-bold text-[var(--color-pop-deep)]"
+                  >
+                    açıklama
+                  </label>
+                  <textarea
+                    id={`task-notes-${task.id}`}
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") cancelEditingTask();
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        saveTask(task.id);
+                      }
+                    }}
+                    disabled={editBusy}
+                    maxLength={8192}
+                    rows={editNotes.split("\n").length > 4 ? 10 : 4}
+                    placeholder="açıklama yok"
+                    className="mt-1.5 w-full border-2 border-[var(--color-ink)] bg-[var(--color-cream-2)] px-2.5 py-2.5 font-body text-base leading-snug outline-none placeholder:text-[var(--color-muted)] focus-visible:ring-2 focus-visible:ring-[var(--color-pop)] focus-visible:ring-offset-2 resize-none overflow-y-auto"
                   />
                   {editError && (
                     <p role="alert" className="mt-2 text-sm font-semibold text-[var(--color-pop-deep)]">
@@ -834,8 +1053,21 @@ export default function Dashboard({ initial }: { initial: AppState }) {
                   >
                     <span aria-hidden="true" className="w-5 h-5 border-2 border-[var(--color-ink)] shrink-0" />
                   </button>
-                  <div className="flex min-w-0 flex-1 items-center py-1.5 pr-2.5">
+                  <div className="flex min-w-0 flex-1 flex-col items-start justify-center py-1.5 pr-2.5">
                     <TaskTitle title={task.title} />
+                    {task.notes && (
+                      <button
+                        type="button"
+                        onClick={(e) => openNote(task.id, e.currentTarget)}
+                        aria-label={`${task.title} açıklamasını aç`}
+                        className="group -mb-1 flex min-h-9 items-center focus-visible:outline-none"
+                      >
+                        <span className="label inline-flex items-center gap-1.5 bg-[var(--color-ink)] px-2 py-1 text-[0.58rem] font-bold text-[var(--color-cream)] transition-transform duration-100 group-active:translate-y-px group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--color-pop)]">
+                          <span aria-hidden="true" className="h-1.5 w-1.5 bg-[var(--color-pop)]" />
+                          {noteBadge(task.notes)}
+                        </span>
+                      </button>
+                    )}
                   </div>
                   <button
                     type="button"

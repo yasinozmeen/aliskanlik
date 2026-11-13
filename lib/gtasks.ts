@@ -35,7 +35,7 @@ async function accessToken(): Promise<string> {
   return j.access_token;
 }
 
-export type GTask = { id: string; title: string };
+export type GTask = { id: string; title: string; notes?: string };
 
 export async function listOpenTasks(): Promise<GTask[]> {
   const at = await accessToken();
@@ -44,10 +44,13 @@ export async function listOpenTasks(): Promise<GTask[]> {
     `?showCompleted=false&maxResults=100`;
   const res = await fetch(url, { headers: { Authorization: "Bearer " + at } });
   if (!res.ok) throw new Error("tasks list failed: " + res.status);
-  const j = (await res.json()) as { items?: { id: string; title?: string; status?: string }[] };
+  const j = (await res.json()) as { items?: { id: string; title?: string; notes?: string; status?: string }[] };
   return (j.items || [])
     .filter((t) => t.status !== "completed" && t.title && t.title.trim() !== "")
-    .map((t) => ({ id: t.id, title: t.title!.trim() }));
+    .map((t) => {
+      const notes = (t.notes || "").trim();
+      return notes ? { id: t.id, title: t.title!.trim(), notes } : { id: t.id, title: t.title!.trim() };
+    });
 }
 
 export async function createTask(title: string, notes?: string): Promise<void> {
@@ -61,15 +64,16 @@ export async function createTask(title: string, notes?: string): Promise<void> {
   if (!res.ok) throw new Error("task insert failed: " + res.status);
 }
 
-export async function updateTaskTitle(taskId: string, title: string): Promise<void> {
+// notes verilmezse açıklamaya dokunulmaz; "" verilirse açıklama silinir.
+export async function updateTask(taskId: string, title: string, notes?: string): Promise<void> {
   const at = await accessToken();
   const url = `https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(TASKLIST)}/tasks/${encodeURIComponent(taskId)}`;
   const res = await fetch(url, {
     method: "PATCH",
     headers: { Authorization: "Bearer " + at, "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify(notes === undefined ? { title } : { title, notes }),
   });
-  if (!res.ok) throw new Error("task title patch failed: " + res.status);
+  if (!res.ok) throw new Error("task update failed: " + res.status);
 }
 
 export async function completeTask(taskId: string): Promise<void> {

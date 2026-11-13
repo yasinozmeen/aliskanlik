@@ -5,11 +5,14 @@ import {
   listOpenTasks,
   completeTask,
   createTask,
-  updateTaskTitle,
+  updateTask,
 } from "@/lib/gtasks";
 import { bumpTaskCount, getTaskStats } from "@/lib/logic";
 
 export const dynamic = "force-dynamic";
+
+// Google Tasks açıklama alanının üst sınırı 8192 karakter.
+const NOTES_MAX = 8192;
 
 // Açık görevleri + sayaç istatistiğini döner.
 export async function GET() {
@@ -28,7 +31,7 @@ export async function GET() {
 
 // İki iş yapar:
 //   { taskId } → görevi tamamla (Tasks'ta kapat + bugünün sayacını +1)
-//   { title }  → Tasks'a yeni görev ekle (sayaç değişmez, tamamlanma değil)
+//   { title, notes? } → Tasks'a yeni görev ekle (sayaç değişmez, tamamlanma değil)
 export async function POST(req: NextRequest) {
   if (!(await isAuthed())) return NextResponse.json({ ok: false }, { status: 401 });
   if (!gtasksConfigured()) {
@@ -40,7 +43,8 @@ export async function POST(req: NextRequest) {
     if (typeof body.title === "string") {
       const title = body.title.trim().slice(0, 500);
       if (!title) return NextResponse.json({ ok: false, error: "title boş" }, { status: 400 });
-      await createTask(title);
+      const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, NOTES_MAX) : "";
+      await createTask(title, notes || undefined);
     } else if (body.taskId) {
       await completeTask(body.taskId);
       bumpTaskCount();
@@ -55,7 +59,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, tasks, stats: getTaskStats() });
 }
 
-// Mevcut bir Google Tasks görevinin yalnızca başlığını değiştirir.
+// Mevcut bir Google Tasks görevinin başlığını ve (gönderildiyse) açıklamasını değiştirir.
+// notes alanı hiç gönderilmezse açıklamaya dokunulmaz; boş gönderilirse açıklama silinir.
 export async function PATCH(req: NextRequest) {
   if (!(await isAuthed())) return NextResponse.json({ ok: false }, { status: 401 });
   if (!gtasksConfigured()) {
@@ -70,7 +75,8 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    await updateTaskTitle(taskId, title);
+    const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, NOTES_MAX) : undefined;
+    await updateTask(taskId, title, notes);
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }
