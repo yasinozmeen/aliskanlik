@@ -3,14 +3,18 @@
 import { getState, getHabits, getGlobalSettings } from "@/lib/logic";
 import { db } from "@/lib/db";
 import type { Habit } from "@/lib/logic";
-import { buildTasksDigest } from "@/lib/telegram-tasks";
+import { buildTasksMessage } from "@/lib/telegram-tasks";
+
+const SITE_URL = process.env.APP_URL || "https://aliskanlik.yasinozmeen.me";
+/** Google Tasks listesinin kendiliğinden gönderildiği saatler (İstanbul, :00–:14 turu). */
+const TASK_LIST_HOURS = [8, 21];
 
 export type NotifyResult = {
   ok: boolean;
   sent?: boolean;
   reason?: string;
   count?: number;
-  digestOnly?: boolean;
+  tasksListSent?: boolean;
   error?: string;
 };
 
@@ -63,43 +67,46 @@ export async function runNotify(force = false): Promise<NotifyResult> {
 
   const database = db();
 
-  // Akşam özeti: 21:00 turunda Google Tasks'taki açık görev sayısı + "Listeyi göster"
-  // butonu. Günde bir kez (state tablosunda tarih tutulur); force'ta eklenmez.
+  // Görev listesi: sabah 08:00 ve akşam 21:00 turunda Google Tasks'taki açık görevler
+  // doğrudan, tam liste olarak ayrı mesajla gider (eskiden akşam yalnız sayı + "Listeyi
+  // göster" düğmesi vardı). Her saat günde bir kez (state'te tarih tutulur); force'ta gitmez.
   const todayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  const eveningSlot = !force && hours === 21 && minutes < 15;
-  let digest: Awaited<ReturnType<typeof buildTasksDigest>> = null;
-  if (eveningSlot) {
-    const sentOn = (database.prepare("SELECT value FROM state WHERE key = 'tasks_digest_date'").get() as { value: string } | undefined)?.value;
+  let tasksListSent = false;
+  if (!force && TASK_LIST_HOURS.includes(hours) && minutes < 15) {
+    const key = `tasks_list_sent_${hours}`;
+    const sentOn = (database.prepare("SELECT value FROM state WHERE key = ?").get(key) as { value: string } | undefined)?.value;
     if (sentOn !== todayKey) {
-      try { digest = await buildTasksDigest(); } catch (e) { console.error("tasks digest error:", e); }
+      try {
+        const msg = await buildTasksMessage(SITE_URL);
+        // Görev yoksa ya da Tasks bağlı değilse boşuna mesaj atma
+        const hasList = msg.text.startsWith("📋 <b>");
+        if (hasList) {
+          const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: msg.text,
+              parse_mode: "HTML",
+              disable_web_page_preview: true,
+              ...(msg.reply_markup ? { reply_markup: msg.reply_markup } : {}),
+            }),
+          });
+          if (res.ok) tasksListSent = true;
+          else console.error("tasks list send failed:", await res.text());
+        }
+        if (tasksListSent || !hasList) {
+          database.prepare("INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)").run(key, todayKey);
+        }
+      } catch (e) {
+        console.error("tasks list error:", e);
+      }
     }
   }
-  const markDigestSent = () =>
-    database.prepare("INSERT OR REPLACE INTO state (key, value) VALUES ('tasks_digest_date', ?)").run(todayKey);
-  // Alışkanlık hatırlatması yoksa özet tek başına gider.
-  const sendDigestOnly = async () => {
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text: digest!.text, reply_markup: digest!.reply_markup }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        console.error("tasks digest send failed:", err);
-        return { ok: false, error: err };
-      }
-      markDigestSent();
-      return { ok: true, sent: true, digestOnly: true };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
-  };
 
   const incompleteState = state.habits.filter((h) => h.dueToday && !h.doneToday);
   if (incompleteState.length === 0) {
-    if (digest) return sendDigestOnly();
-    return { ok: true, sent: false, reason: "Bütün görevler tamam." };
+    return { ok: true, sent: tasksListSent, tasksListSent, reason: "Bütün görevler tamam." };
   }
 
   // Eşleştir
@@ -147,17 +154,14 @@ export async function runNotify(force = false): Promise<NotifyResult> {
   }
 
   if (toNotify.length === 0) {
-    if (digest) return sendDigestOnly();
-    return { ok: true, sent: false, reason: "Bu periyotta bildirilecek görev yok." };
+    return { ok: true, sent: tasksListSent, tasksListSent, reason: "Bu periyotta bildirilecek görev yok." };
   }
 
   let text = `🔔 *Hatırlatma Zamanı!*\n\nAşağıdaki görevleri tamamladın mı?`;
-  if (digest) text += `\n\n${digest.text}`;
 
   const inline_keyboard = toNotify.map((h) => [
     { text: `✅ ${h.name}`, callback_data: `done_${h.id}` }
   ]);
-  if (digest?.reply_markup) inline_keyboard.push(...digest.reply_markup.inline_keyboard);
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -187,9 +191,8 @@ export async function runNotify(force = false): Promise<NotifyResult> {
         stmt.run(nowIso, h.id);
       }
     }
-    if (digest) markDigestSent();
 
-    return { ok: true, sent: true, count: toNotify.length };
+    return { ok: true, sent: true, count: toNotify.length, tasksListSent };
   } catch (e) {
     return { ok: false, error: String(e) };
   }

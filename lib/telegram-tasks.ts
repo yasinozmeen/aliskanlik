@@ -1,6 +1,6 @@
 /* Google Tasks → Telegram mesajı.
-   /gorevler komutu ve akşam özetindeki "Listeyi göster" butonu aynı listeyi
-   üretir; her görev bir ✅ butonu, callback_data `task_<googleId>`.
+   /gorevler komutu ve sabah/akşam otomatik listesi (lib/notify.ts) aynı listeyi
+   üretir; eski mesajlardaki "Listeyi göster" (TASKS_LIST_CB) düğmesi de hâlâ çalışır; her görev bir ✅ butonu, callback_data `task_<googleId>`.
    Telegram callback_data sınırı 64 bayt — sığmayan (çok uzun id'li) görev
    butonsuz düz satır olarak yazılır. */
 
@@ -54,17 +54,6 @@ export async function buildTasksMessage(siteUrl: string): Promise<TasksMessage> 
     text += `\n(${noButton.join(", ")} yalnız <a href="${siteUrl}">siteden</a> kapatılabilir.)`;
   }
   return buttons.length ? { text, reply_markup: { inline_keyboard: buttons } } : { text };
-}
-
-/** Akşam özeti için tek satır + buton. Görev yoksa null (özet eklenmez). */
-export async function buildTasksDigest(): Promise<TasksMessage | null> {
-  if (!gtasksConfigured()) return null;
-  const tasks = await listOpenTasks();
-  if (tasks.length === 0) return null;
-  return {
-    text: `📋 Google'da ${tasks.length} açık görev var.`,
-    reply_markup: { inline_keyboard: [[{ text: "Listeyi göster", callback_data: TASKS_LIST_CB }]] },
-  };
 }
 
 /* Telegram'ın komut menüsü (mesaj kutusundaki "/" düğmesi). Uygulama her
